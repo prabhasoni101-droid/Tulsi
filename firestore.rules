@@ -1,0 +1,154 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives & Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getRole() {
+      return isSignedIn() ? getUserData().role : null;
+    }
+
+    function isOwner() {
+      return isSignedIn() && (
+        request.auth.token.email == 'prabhasoni101@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'OWNER')
+      );
+    }
+
+    function isMentor() {
+      return isSignedIn() && (
+        request.auth.token.email == 'prabhasoni101@gmail.com' || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['MENTOR', 'OWNER']))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validations
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role']) && 
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['USER', 'MENTOR', 'OWNER'];
+    }
+
+    function isValidDevotee(data) {
+      return data.keys().hasAll(['name', 'contact']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.contact is string && data.contact.size() <= 20;
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['title', 'date']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.date is string; // or timestamp
+    }
+
+    function isValidAssignment(data) {
+      return data.keys().hasAll(['devoteeId', 'userId']) &&
+             data.devoteeId is string && data.userId is string;
+    }
+
+    // 1. Users Collection
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read: if true; // Allow public to see facilitator names
+      allow list: if true; // Allow public to list facilitators
+      allow create: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      allow update: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      allow delete: if isOwner();
+    }
+
+    match /templates/{templateId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    // 2. Devotees Database
+    match /devotees/{devoteeId} {
+      allow read: if true; // Publicly sharable profiles
+      allow list: if true; // Allow public to query by contact during attendance
+      allow create: if true; // Allow public to register via attendance form
+      allow update: if true; // Allow public to update via attendance form
+      allow delete: if isSignedIn();
+    }
+
+    // 4. Settings
+    match /settings/{templeId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner();
+    }
+
+    match /events/{eventId} {
+      allow read: if true; 
+      allow list: if isSignedIn();
+      allow create, update: if isOwner() || (isSignedIn() && isValidEvent(incoming()));
+      allow delete: if isOwner();
+      
+      // Subcollection: Assignments
+      match /assignments/{assignmentId} {
+        allow read: if true; // Publicly readable for profile view
+        allow list: if isSignedIn() || (get(/databases/$(database)/documents/events/$(eventId)).data.isAttendanceOpen == true);
+        allow write: if isSignedIn();
+      }
+
+      // Subcollection: Attendance
+      match /attendance/{devoteeId} {
+        allow read: if true;
+        allow write: if (isSignedIn()) || (get(/databases/$(database)/documents/events/$(eventId)).data.isAttendanceOpen == true);
+      }
+    }
+
+    // Collection Group for Assignments (for Devotee Profile)
+    match /{path=**}/assignments/{assignmentId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/attendance/{devoteeId} {
+      allow read: if true;
+    }
+
+    match /callingHistory/{historyId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow create: if isSignedIn();
+    }
+
+    match /temples/{templeId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner();
+
+      match /history/{historyId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+  }
+}
