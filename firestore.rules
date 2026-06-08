@@ -1,46 +1,51 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Global Safety Net
+
+    // ── Default deny ──────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Phase 3: Primitives & Helpers
+    // ── Helpers ─────────────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function userExists() {
+      return isSignedIn() && exists(userPath());
     }
 
-    function getRole() {
-      return isSignedIn() ? getUserData().role : null;
+    function userData() {
+      return get(userPath()).data;
+    }
+
+    function userRole() {
+      return userExists() ? userData().role : null;
+    }
+
+    function userTempleId() {
+      return userExists() ? userData().templeId : null;
     }
 
     function isOwner() {
-      return isSignedIn() && (
-        request.auth.token.email == 'prabhasoni101@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'OWNER')
-      );
+      return userRole() == 'OWNER';
     }
 
     function isMentor() {
-      return isSignedIn() && (
-        request.auth.token.email == 'prabhasoni101@gmail.com' || 
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['MENTOR', 'OWNER']))
-      );
+      return userRole() in ['MENTOR', 'OWNER'];
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isActiveUser() {
+      return userExists() && userData().isDeleted != true;
+    }
+
+    function sameTemple(templeId) {
+      return isActiveUser() && userTempleId() == templeId;
     }
 
     function incoming() {
@@ -51,104 +56,167 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Entity Validations
     function isValidUser(data) {
-      return data.keys().hasAll(['email', 'role']) && 
-             data.email is string && data.email.size() <= 256 &&
-             data.role in ['USER', 'MENTOR', 'OWNER'];
+      return data.keys().hasAll(['email', 'role'])
+        && data.email is string && data.email.size() <= 256
+        && data.role in ['USER', 'MENTOR', 'OWNER']
+        && !data.keys().hasAny(['password']);
     }
 
     function isValidDevotee(data) {
-      return data.keys().hasAll(['name', 'contact']) &&
-             data.name is string && data.name.size() <= 100 &&
-             data.contact is string && data.contact.size() <= 20;
+      return data.keys().hasAll(['name', 'contact'])
+        && data.name is string && data.name.size() <= 100
+        && data.contact is string && data.contact.size() <= 20
+        && !data.keys().hasAny(['password']);
     }
 
     function isValidEvent(data) {
-      return data.keys().hasAll(['title', 'date']) &&
-             data.title is string && data.title.size() <= 200 &&
-             data.date is string; // or timestamp
+      return data.keys().hasAll(['title', 'date'])
+        && data.title is string && data.title.size() <= 200
+        && data.date is string;
     }
 
-    function isValidAssignment(data) {
-      return data.keys().hasAll(['devoteeId', 'userId']) &&
-             data.devoteeId is string && data.userId is string;
+    function selfUpdateSafe() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['role', 'templeId', 'password', 'isDeleted', 'email']);
     }
 
-    // 1. Users Collection
+    function eventDoc(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId));
+    }
+
+    function eventAttendanceOpen(eventId) {
+      return eventDoc(eventId).exists
+        && eventDoc(eventId).data.isAttendanceOpen == true;
+    }
+
+    function publicFacilitatorRead() {
+      return resource.data.keys().hasAll(['displayName', 'role', 'templeId'])
+        && resource.data.role in ['MENTOR', 'OWNER']
+        && resource.data.isDeleted != true;
+    }
+
+    // ── Connection test (dev only) ───────────────────────────────────────────
     match /test/{docId} {
       allow read: if true;
     }
 
+    // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if true; // Allow public to see facilitator names
-      allow list: if true; // Allow public to list facilitators
-      allow create: if isSignedIn() && (request.auth.uid == userId || isOwner());
-      allow update: if isSignedIn() && (request.auth.uid == userId || isOwner());
-      allow delete: if isOwner();
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId
+        || (isMentor() && sameTemple(resource.data.templeId))
+        || publicFacilitatorRead()
+      );
+      allow list: if (isSignedIn() && isMentor() && resource.data.templeId == userTempleId())
+        || publicFacilitatorRead()
+        || (!isSignedIn()
+            && resource.data.templeId != null
+            && resource.data.isDeleted != true
+            && resource.data.keys().hasAll(['displayName', 'templeId']));
+      allow create: if isSignedIn() && (
+        (request.auth.uid == userId && isValidUser(incoming()) && incoming().role == 'USER')
+        || (isOwner() && isValidUser(incoming()) && incoming().templeId == userTempleId())
+      );
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && selfUpdateSafe())
+        || (isOwner() && sameTemple(resource.data.templeId)
+            && incoming().templeId == resource.data.templeId
+            && !incoming().keys().hasAny(['password']))
+      );
+      allow delete: if isOwner() && sameTemple(resource.data.templeId);
     }
 
-    match /templates/{templateId} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-
-    // 2. Devotees Database
+    // ── Devotees ─────────────────────────────────────────────────────────────
     match /devotees/{devoteeId} {
-      allow read: if true; // Publicly sharable profiles
-      allow list: if true; // Allow public to query by contact during attendance
-      allow create: if true; // Allow public to register via attendance form
-      allow update: if true; // Allow public to update via attendance form
-      allow delete: if isSignedIn();
+      allow get, list: if isSignedIn() && sameTemple(resource.data.templeId);
+      allow create: if isSignedIn() && isMentor()
+        && isValidDevotee(incoming())
+        && incoming().templeId == userTempleId();
+      allow update: if isSignedIn() && isMentor()
+        && sameTemple(resource.data.templeId)
+        && incoming().templeId == resource.data.templeId
+        && isValidDevotee(incoming());
+      allow delete: if isOwner() && sameTemple(resource.data.templeId);
+
+      // Public attendance: create/update when event attendance is open for same temple
+      allow create, update: if isValidDevotee(incoming())
+        && incoming().templeId is string
+        && incoming().keys().hasAll(['_attendanceEventId'])
+        && eventAttendanceOpen(incoming()._attendanceEventId)
+        && eventDoc(incoming()._attendanceEventId).data.templeId == incoming().templeId
+        && !incoming().keys().hasAny(['password', 'role']);
     }
 
-    // 4. Settings
-    match /settings/{templeId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner();
-    }
-
+    // ── Events ───────────────────────────────────────────────────────────────
     match /events/{eventId} {
-      allow read: if true; 
-      allow list: if isSignedIn();
-      allow create, update: if isOwner() || (isSignedIn() && isValidEvent(incoming()));
-      allow delete: if isOwner();
-      
-      // Subcollection: Assignments
+      allow get: if resource.data.isAttendanceOpen == true
+        || resource.data.isPublic == true
+        || (isSignedIn() && sameTemple(resource.data.templeId));
+      allow list: if isSignedIn() && isActiveUser() && resource.data.templeId == userTempleId();
+      allow create: if isOwner() && isValidEvent(incoming())
+        && incoming().templeId == userTempleId();
+      allow update: if isOwner() && sameTemple(resource.data.templeId)
+        && incoming().templeId == resource.data.templeId;
+      allow delete: if isOwner() && sameTemple(resource.data.templeId);
+
       match /assignments/{assignmentId} {
-        allow read: if true; // Publicly readable for profile view
-        allow list: if isSignedIn() || (get(/databases/$(database)/documents/events/$(eventId)).data.isAttendanceOpen == true);
-        allow write: if isSignedIn();
+        allow read: if isSignedIn() && sameTemple(eventDoc(eventId).data.templeId)
+          || eventDoc(eventId).data.isPublic == true;
+        allow list: if isSignedIn() && sameTemple(eventDoc(eventId).data.templeId);
+        allow write: if isSignedIn() && isMentor()
+          && sameTemple(eventDoc(eventId).data.templeId);
       }
 
-      // Subcollection: Attendance
-      match /attendance/{devoteeId} {
-        allow read: if true;
-        allow write: if (isSignedIn()) || (get(/databases/$(database)/documents/events/$(eventId)).data.isAttendanceOpen == true);
+      match /attendance/{attendanceDevoteeId} {
+        allow read: if isSignedIn() && sameTemple(eventDoc(eventId).data.templeId)
+          || eventAttendanceOpen(eventId);
+        allow create, update: if eventAttendanceOpen(eventId)
+          && incoming().keys().hasAll(['devoteeId', 'present'])
+          || (isSignedIn() && isMentor() && sameTemple(eventDoc(eventId).data.templeId));
+        allow delete: if isOwner() && sameTemple(eventDoc(eventId).data.templeId);
       }
     }
 
-    // Collection Group for Assignments (for Devotee Profile)
-    match /{path=**}/assignments/{assignmentId} {
-      allow read: if true;
+    // ── Templates ────────────────────────────────────────────────────────────
+    match /templates/{templateId} {
+      allow read: if isSignedIn() && sameTemple(resource.data.templeId);
+      allow write: if isOwner() && incoming().templeId == userTempleId();
     }
 
-    match /{path=**}/attendance/{devoteeId} {
-      allow read: if true;
+    // ── Settings ───────────────────────────────────────────────────────────────
+    match /settings/{templeId} {
+      allow read: if isSignedIn() && userTempleId() == templeId;
+      allow write: if isOwner() && userTempleId() == templeId;
     }
 
+    // ── Calling history ────────────────────────────────────────────────────────
     match /callingHistory/{historyId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
-      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || (isOwner() && sameTemple(resource.data.templeId))
+      );
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isOwner() && sameTemple(resource.data.templeId);
     }
 
+    // ── Temples / history ──────────────────────────────────────────────────────
     match /temples/{templeId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner();
+      allow read: if isSignedIn() && userTempleId() == templeId;
+      allow write: if isOwner() && userTempleId() == templeId;
 
       match /history/{historyId} {
-        allow read, write: if isSignedIn();
+        allow read, write: if isOwner() && userTempleId() == templeId;
       }
+    }
+
+    // ── Collection group: assignments (profile view) ───────────────────────────
+    match /{path=**}/assignments/{assignmentId} {
+      allow read: if isSignedIn() && isActiveUser();
+    }
+
+    match /{path=**}/attendance/{attendanceId} {
+      allow read: if isSignedIn() && isActiveUser();
     }
   }
 }

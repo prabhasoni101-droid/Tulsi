@@ -8,10 +8,11 @@ export default defineConfig(({mode}) => {
   // To deploy to GitHub pages, the base must match the repository name.
   // We can dynamically get it from github actions, or you can manually hardcode it.
   // REPLACE 'Vrinda-app' with your actual repository name if it differs and you build locally
-  const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : 'Vrinda-app';
+  const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1];
 
   return {
-    base: `/${repoName}/`,
+    // Use repo subpath only when deploying via GitHub Actions; local dev serves from root.
+    base: repoName ? `/${repoName}/` : '/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
@@ -25,6 +26,23 @@ export default defineConfig(({mode}) => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+      // Proxy Firebase Auth helper when using authDomain=localhost (fixes Google OAuth on local dev)
+      ...(env.VITE_FIREBASE_AUTH_DOMAIN === 'localhost' && env.VITE_FIREBASE_PROJECT_ID
+        ? {
+            proxy: {
+              '/__/auth': {
+                target: `https://${env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+                changeOrigin: true,
+                secure: true,
+              },
+              '/__/firebase': {
+                target: `https://${env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+                changeOrigin: true,
+                secure: true,
+              },
+            },
+          }
+        : {}),
     },
   };
 });
