@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "loginUser": "forging275@gamil.com",
+  "loginPassword": "*Matrix1234*",
+  "executionArgs": {
+    "projectName": "iskcon-devotee-management",
+    "projectPath": "c:\\Users\\hp\\Downloads\\iskcon-devotee-management",
+    "testIds": [],
+    "additionalInstruction": "RIGOROUS FULL AUDIT. App URL: http://localhost:3000/#/login (HashRouter, base is /). Owner tab = Google sign-in only (popup account picker). User/Mentor tabs = User ID + password. Test credentials: loginUser forging275@gamil.com password *Matrix1234*. Test ALL areas: (1) Auth - login logout role tabs protected routes, (2) Security - public profile edits without auth, unauthorized route access, (3) Data - CSV import, duplicate devotees, attendance submission, (4) Performance - large lists loading, rapid form submits, (5) Navigation - all sidebar routes, event detail, public attendance URL with hash #/public-attendance/:id, (6) Error states - invalid login, profile not found. Document every failure with steps to reproduce.",
+    "serverMode": "production",
+    "envs": {
+      "API_KEY": "sk-user-A6WNEwod_R1Yf_UdbsHunhS8s6jhz8OlUv55IRsOHdDlJWwwxQ8q9bMomKXXhGoDTODcK0zootOii09rhNoir81AMoO_UbWb1jS04U0pW3oZ2YONDIDkZ-Nvr5yPp8n6IuM"
+    }
+  },
+  "serverPort": 57459
+}

@@ -1,0 +1,115 @@
+version: "2"
+type: frontend
+tech_stack:
+  - TypeScript
+  - React 19
+  - Vite 6
+  - Tailwind CSS 4
+  - Firebase Auth & Firestore
+  - React Router HashRouter
+  - Motion
+routes:
+  - path: /login
+    file: src/views/Login.tsx
+    auth_required: false
+    description: User/Mentor password login; Owner Google OAuth only
+  - path: /
+    file: src/views/Dashboard.tsx
+    auth_required: true
+    description: Role-based dashboard (Owner/Mentor/User)
+  - path: /events/:id
+    file: src/views/EventDetail.tsx
+    auth_required: true
+    description: Event detail, assignments, attendance
+  - path: /database
+    file: src/views/DatabaseManagement.tsx
+    auth_required: true
+    description: Devotee CRUD, CSV import/export (Owner only)
+  - path: /attendance
+    file: src/views/AttendanceSheet.tsx
+    auth_required: true
+    description: Attendance management (Owner only)
+  - path: /history
+    file: src/views/History.tsx
+    auth_required: true
+    description: Archive/history (Owner only)
+  - path: /profile/:id
+    file: src/views/DevoteeProfile.tsx
+    auth_required: false
+    description: Public devotee profile (editable when logged in)
+  - path: /public-attendance/:id
+    file: src/views/PublicAttendance.tsx
+    auth_required: false
+    description: Public QR attendance form
+features:
+  - name: Owner Google Login
+    description: Owner tab uses Sign in with Google popup with account picker
+    files:
+      - src/views/Login.tsx
+      - src/services/firebase.ts
+    entry_route: /login
+    user_interactions:
+      - Select Owner tab
+      - Click Sign in with Google
+      - Pick Google account from device account list
+    auth_required: false
+  - name: User Mentor Password Login
+    description: User ID and password login for User and Mentor tabs
+    files:
+      - src/views/Login.tsx
+      - src/services/firebase.ts
+    entry_route: /login
+    user_interactions:
+      - Select User or Mentor tab
+      - Fill Username/ID and Password
+      - Submit sign-in form
+    auth_required: false
+  - name: Role-Based Dashboard
+    description: Different dashboards per role with sidebar navigation
+    files:
+      - src/views/Dashboard.tsx
+      - src/views/dashboards/OwnerDashboard.tsx
+      - src/views/dashboards/MentorDashboard.tsx
+      - src/views/dashboards/UserDashboard.tsx
+    entry_route: /
+    user_interactions:
+      - View stats and events
+      - Navigate via sidebar
+      - Logout
+    auth_required: true
+  - name: Database Management
+    description: Owner manages devotees with search, edit, CSV import
+    files:
+      - src/views/DatabaseManagement.tsx
+    entry_route: /database
+    user_interactions:
+      - Search devotees
+      - Add edit delete records
+      - Import CSV
+      - Export data
+    auth_required: true
+  - name: Public Attendance
+    description: Anonymous attendance submission via event QR link
+    files:
+      - src/views/PublicAttendance.tsx
+    entry_route: /public-attendance/:id
+    user_interactions:
+      - Fill contact and name
+      - Submit attendance form
+    auth_required: false
+known_limitations:
+  - issue: Google OAuth requires popup and localhost authorized domain
+    location: src/services/firebase.ts
+    impact: Automated tests may not complete Google OAuth
+  - issue: Firestore security rules may allow public read/write on devotees
+    location: firestore.rules
+    impact: Security vulnerability if rules deployed as-is
+  - issue: Plaintext staff passwords stored in Firestore
+    location: src/views/dashboards/OwnerDashboard.tsx
+    impact: Credential exposure
+  - issue: Unbounded collection listeners on dashboards
+    location: src/views/dashboards/OwnerDashboard.tsx
+    impact: Performance degradation at scale
+  - issue: Batch writes may exceed Firestore 500 operation limit
+    location: src/views/History.tsx
+    impact: Data operations fail on large datasets

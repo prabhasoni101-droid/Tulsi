@@ -1,0 +1,2486 @@
+# Full Source Code
+
+## File: src/App.tsx
+```
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AnimatePresence } from 'motion/react';
+
+// Views (Placeholder imports - will create these next)
+import Login from './views/Login';
+import Dashboard from './views/Dashboard';
+import EventDetail from './views/EventDetail';
+import DatabaseManagement from './views/DatabaseManagement';
+import AttendanceSheet from './views/AttendanceSheet';
+
+const ProtectedRoute: React.FC<{ children: React.ReactNode; minRole?: 'USER' | 'MENTOR' | 'OWNER' }> = ({ children, minRole = 'USER' }) => {
+  const { user, profile, loading } = useAuth();
+  
+  if (loading) return <div className="h-screen w-screen flex items-center justify-center font-serif text-2xl text-saffron animate-pulse">Radhe Radhe...</div>;
+  if (!user) return <Navigate to="/login" />;
+  
+  if (minRole === 'OWNER' && profile?.role !== 'OWNER') return <Navigate to="/" />;
+  if (minRole === 'MENTOR' && profile?.role === 'USER') return <Navigate to="/" />;
+  
+  return <>{children}</>;
+};
+
+const AppContent = () => {
+  return (
+    <Router>
+      <AnimatePresence mode="wait">
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/events/:id" element={
+            <ProtectedRoute>
+              <EventDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/database" element={
+            <ProtectedRoute minRole="MENTOR">
+              <DatabaseManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="/attendance" element={
+            <ProtectedRoute minRole="OWNER">
+              <AttendanceSheet />
+            </ProtectedRoute>
+          } />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </AnimatePresence>
+    </Router>
+  );
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+```
+
+## File: src/components/Layout.tsx
+```
+import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { 
+  BarChart3, 
+  Users, 
+  Calendar, 
+  ShieldCheck, 
+  ClipboardList, 
+  LogOut,
+  Menu,
+  X,
+  Database
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../lib/utils';
+
+const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile, signOut, isOwner, isMentor } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+
+  const menuItems = [
+    { name: 'Dashboard', icon: BarChart3, path: '/', minRole: 'USER' },
+    { name: 'Database', icon: Database, path: '/database', minRole: 'MENTOR' },
+    { name: 'Attendance', icon: ClipboardList, path: '/attendance', minRole: 'OWNER' },
+  ];
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
+      {/* Mobile Header */}
+      <div className="md:hidden bg-white border-b border-stone-200 px-4 py-4 flex items-center justify-between">
+        <h1 className="text-2xl text-saffron-dark font-serif font-bold">ISKCON</h1>
+        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-stone-600">
+          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
+
+      {/* Sidebar */}
+      <AnimatePresence>
+        {(isMenuOpen || true) && (
+          <motion.div 
+            initial={{ x: -300 }}
+            animate={{ x: 0 }}
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-stone-200 flex-col md:relative md:flex transition-transform duration-300",
+              !isMenuOpen && "hidden md:flex"
+            )}
+          >
+            <div className="p-8 hidden md:block">
+              <h1 className="text-3xl text-saffron-dark font-serif font-bold border-b-2 border-gold pb-2">ISKCON</h1>
+              <p className="text-xs text-stone-400 mt-2 tracking-widest uppercase font-medium">Seva Management</p>
+            </div>
+
+            <nav className="flex-1 px-4 space-y-2 mt-4 md:mt-0">
+              {menuItems.map((item) => {
+                if (item.minRole === 'OWNER' && !isOwner) return null;
+                if (item.minRole === 'MENTOR' && !isMentor) return null;
+
+                const isActive = location.pathname === item.path;
+                return (
+                  <button
+                    key={item.name}
+                    onClick={() => {
+                      navigate(item.path);
+                      setIsMenuOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+                      isActive 
+                        ? "bg-saffron text-white shadow-md shadow-saffron/20" 
+                        : "text-stone-600 hover:bg-saffron/5 hover:text-saffron-dark"
+                    )}
+                  >
+                    <item.icon size={20} />
+                    <span className="font-medium">{item.name}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-4 border-t border-stone-100">
+              <div className="bg-stone-50 rounded-2xl p-4 mb-4">
+                <p className="text-sm font-bold text-stone-800 truncate">{profile?.displayName || 'User'}</p>
+                <p className="text-xs text-stone-500 flex items-center gap-1 mt-1 capitalize">
+                  <ShieldCheck size={12} className="text-saffron" />
+                  {profile?.role?.toLowerCase()} level
+                </p>
+              </div>
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+              >
+                <LogOut size={20} />
+                <span className="font-medium">Logout</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-x-hidden">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default Layout;
+
+```
+
+## File: src/context/AuthContext.tsx
+```
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
+import { UserProfile, UserRole } from '../types';
+
+interface AuthContextType {
+  user: User | null;
+  profile: UserProfile | null;
+  loading: boolean;
+  isAdmin: boolean;
+  isMentor: boolean;
+  isOwner: boolean;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        setLoading(true);
+        if (firebaseUser) {
+          setUser(firebaseUser);
+          // Fetch or create profile
+          const profileRef = doc(db, 'users', firebaseUser.uid);
+          const profileSnap = await getDoc(profileRef);
+          
+          if (profileSnap.exists()) {
+            const data = profileSnap.data();
+            let roleToSet = data.role;
+            let templeIdToSet = data.templeId;
+            let needsUpdate = false;
+            
+            // Auto-promote the main admin email if their role is incorrect
+            if (firebaseUser.email === 'prabhasoni101@gmail.com' && roleToSet !== 'OWNER') {
+              roleToSet = 'OWNER';
+              needsUpdate = true;
+            }
+
+            if (roleToSet === 'OWNER' && !templeIdToSet) {
+              templeIdToSet = firebaseUser.uid;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+               await setDoc(profileRef, { role: roleToSet, templeId: templeIdToSet }, { merge: true });
+            }
+            
+            setProfile({ uid: firebaseUser.uid, ...data, role: roleToSet, templeId: templeIdToSet } as UserProfile);
+          } else {
+            // Default role for new signups
+            // Since we pre-create profiles for USER/MENTOR in OwnerDashboard before they log in,
+            // anyone hitting this block is signing in via Google logic in Login tab (Owner Access).
+            const role: UserRole = 'OWNER';
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName || 'Owner',
+              email: firebaseUser.email || '',
+              role,
+              templeId: firebaseUser.uid,
+            };
+            await setDoc(profileRef, newProfile);
+            setProfile(newProfile);
+          }
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+      } catch (error) {
+        console.error("Auth error:", error);
+        setUser(null);
+        setProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const signOut = () => auth.signOut();
+
+  const isOwner = profile?.role === 'OWNER';
+  const isMentor = profile?.role === 'MENTOR' || isOwner;
+  const isAdmin = isMentor; // Admin is Mentor or Owner
+
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      loading, 
+      isAdmin, 
+      isMentor, 
+      isOwner, 
+      signOut 
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+```
+
+## File: src/index.css
+```
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-saffron: #FF9933;
+  --color-saffron-dark: #cc7a29;
+  --color-iskcon-dark: #5D4037;
+  --color-gold: #D4AF37;
+  --color-cream: #FDF5E6;
+}
+
+@layer base {
+  body {
+    @apply bg-cream text-slate-800 font-sans antialiased overflow-x-hidden;
+  }
+}
+
+.card-shadow {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.iskcon-glass {
+  @apply bg-white border border-slate-100 shadow-sm rounded-2xl;
+}
+
+.btn-primary {
+  @apply bg-saffron hover:bg-saffron-dark text-white font-semibold flex items-center justify-center px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-orange-200 active:scale-95 disabled:opacity-50;
+}
+
+.btn-secondary {
+  @apply px-5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95;
+}
+
+.active-tab {
+  border-left: 4px solid var(--color-saffron);
+  background: rgba(255, 153, 51, 0.1);
+}
+
+```
+
+## File: src/lib/utils.ts
+```
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+```
+
+## File: src/main.tsx
+```
+import {StrictMode} from 'react';
+import {createRoot} from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+
+```
+
+## File: src/services/firebase.ts
+```
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword 
+} from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+
+export async function signInWithGoogle() {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error('Error signing in with Google', error);
+    throw error;
+  }
+}
+
+export async function loginWithUserId(userId: string, password: string) {
+  // Map simple ID to internal email format
+  const email = `${userId.toLowerCase()}@iskcon.app`;
+  return signInWithEmailAndPassword(auth, email, password);
+}
+
+export async function registerSevak(userId: string, password: string) {
+  const email = `${userId.toLowerCase()}@iskcon.app`;
+  
+  // Use a secondary app to avoid overwriting the current user's session
+  // We use inline require or re-initialize to avoid global scope issues
+  const secondaryAppName = 'SecondaryAppForRegistration';
+  
+  // We use getApps to check if it's already initialized
+  let secondaryApp;
+  const existingApps = getApps();
+  const found = existingApps.find((a: any) => a.name === secondaryAppName);
+  if (found) {
+    secondaryApp = found;
+  } else {
+    secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+  }
+  
+  const secondaryAuth = getAuth(secondaryApp);
+  const creds = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  await secondaryAuth.signOut(); // immediately sign out of secondary
+  return creds;
+}
+
+// Connection test
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error: any) {
+    if (error.message?.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    }
+  }
+}
+testConnection();
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: 'create' | 'update' | 'delete' | 'list' | 'get' | 'write';
+  path: string | null;
+  authInfo: {
+    userId: string;
+    email: string;
+    emailVerified: boolean;
+    isAnonymous: boolean;
+    providerInfo: any[];
+  }
+}
+
+export function handleFirestoreError(error: any, operation: any, path: string | null = null): never {
+  const authInfo = auth.currentUser ? {
+    userId: auth.currentUser.uid,
+    email: auth.currentUser.email || '',
+    emailVerified: auth.currentUser.emailVerified,
+    isAnonymous: auth.currentUser.isAnonymous,
+    providerInfo: auth.currentUser.providerData
+  } : {
+    userId: 'anonymous',
+    email: '',
+    emailVerified: false,
+    isAnonymous: true,
+    providerInfo: []
+  };
+
+  const errorInfo: FirestoreErrorInfo = {
+    error: error.message || 'Unknown Firestore error',
+    operationType: operation,
+    path,
+    authInfo
+  };
+
+  const errorString = JSON.stringify(errorInfo);
+  console.error('Firestore Error:', errorString);
+  throw new Error(errorString);
+}
+
+```
+
+## File: src/types.ts
+```
+export type UserRole = 'USER' | 'MENTOR' | 'OWNER';
+
+export interface UserProfile {
+  uid: string;
+  displayName: string | null;
+  email: string;
+  role: UserRole;
+  contact?: string;
+  mentorId?: string;
+  templeId?: string;
+}
+
+export interface Devotee {
+  id?: string;
+  name: string;
+  contact: string;
+  mentor: string;
+  chanting: string;
+  facilitatorId: string;
+  facilitatorName: string;
+  attendanceCount: number;
+  templeId?: string;
+  createdAt: string;
+}
+
+export interface Event {
+  id?: string;
+  title: string;
+  date: string;
+  description: string;
+  mediaUrl: string;
+  isPublic: boolean;
+  createdBy: string;
+  templeId?: string;
+  createdAt: string;
+  assignmentsCount?: number;
+  attendingCount?: number;
+}
+
+export interface CallingAssignment {
+  id?: string;
+  eventId: string;
+  devoteeId: string;
+  userId: string;
+  status: 'PENDING' | 'COMPLETED';
+  response: 'COMING' | 'NOT_COMING' | 'UNREACHABLE' | 'NONE';
+  devoteeName: string;
+  devoteeContact: string;
+  updatedAt: string;
+}
+
+export interface Attendance {
+  id?: string;
+  devoteeId: string;
+  present: boolean;
+  markedAt: string;
+  markedBy: string;
+}
+
+```
+
+## File: src/views/AttendanceSheet.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { db } from '../services/firebase';
+import { collection, query, onSnapshot, doc, setDoc, getDocs, updateDoc, increment, writeBatch } from 'firebase/firestore';
+import { Devotee, Event, Attendance } from '../types';
+import Layout from '../components/Layout';
+import { 
+  FileUp, 
+  Search, 
+  Check, 
+  X, 
+  Calendar,
+  Filter,
+  CheckCircle2
+} from 'lucide-react';
+import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
+
+const AttendanceSheet = () => {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [devotees, setDevotees] = useState<Devotee[]>([]);
+  const [attendance, setAttendance] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    const unsubEvents = onSnapshot(query(collection(db, 'events')), (snap) => {
+      const eventData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
+      setEvents(eventData);
+      if (!selectedEventId && eventData.length > 0) setSelectedEventId(eventData[0].id!);
+    });
+
+    const unsubDevotees = onSnapshot(query(collection(db, 'devotees')), (snap) => {
+      setDevotees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+    });
+
+    return () => {
+      unsubEvents();
+      unsubDevotees();
+    };
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    const unsubAttendance = onSnapshot(collection(db, `events/${selectedEventId}/attendance`), (snap) => {
+      const data: Record<string, boolean> = {};
+      snap.docs.forEach(doc => {
+        data[doc.id] = (doc.data() as Attendance).present;
+      });
+      setAttendance(data);
+    });
+    return unsubAttendance;
+  }, [selectedEventId]);
+
+  const toggleAttendance = async (devoteeId: string) => {
+    if (!selectedEventId) return;
+    const isPresent = attendance[devoteeId];
+    const docRef = doc(db, `events/${selectedEventId}/attendance`, devoteeId);
+    
+    // Update attendance record
+    await setDoc(docRef, {
+      devoteeId,
+      present: !isPresent,
+      markedAt: new Date().toISOString(),
+      markedBy: profile?.uid
+    });
+
+    // Update global attendance count for devotee
+    await updateDoc(doc(db, 'devotees', devoteeId), {
+      attendanceCount: increment(!isPresent ? 1 : -1)
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedEventId) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      const contacts = lines.map(line => line.trim()).filter(line => line.length > 0);
+      
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const contact of contacts) {
+        const found = devotees.find(d => d.contact === contact);
+        if (found && !attendance[found.id!]) {
+          const docRef = doc(db, `events/${selectedEventId}/attendance`, found.id!);
+          batch.set(docRef, {
+            devoteeId: found.id!,
+            present: true,
+            markedAt: new Date().toISOString(),
+            markedBy: profile?.uid
+          });
+          batch.update(doc(db, 'devotees', found.id!), {
+            attendanceCount: increment(1)
+          });
+          count++;
+        }
+      }
+
+      await batch.commit();
+      alert(`Successfully marked ${count} devotees as present!`);
+    };
+    reader.readAsText(file);
+  };
+
+  const filteredDevotees = devotees.filter(d => 
+    d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    d.contact.includes(searchTerm)
+  );
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl text-saffron-dark font-serif font-bold">Attendance Vault</h1>
+            <p className="text-stone-500">Record digital attendance through sheets or manual touch.</p>
+          </div>
+          
+          <div className="flex gap-2">
+            <label className="btn-secondary flex items-center gap-2 cursor-pointer">
+              <FileUp size={18} /> Upload List
+              <input type="file" accept=".txt,.csv" className="hidden" onChange={handleFileUpload} />
+            </label>
+            <select 
+              value={selectedEventId} 
+              onChange={e => setSelectedEventId(e.target.value)}
+              className="bg-white border border-stone-200 rounded-xl px-4 py-2 text-stone-700 font-medium focus:border-saffron outline-none"
+            >
+              {events.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="iskcon-glass rounded-3xl p-6 space-y-4">
+          <div className="flex justify-between items-center bg-stone-50/50 p-4 rounded-2xl">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Find devotee..."
+                className="w-full pl-12 pr-4 py-2 rounded-xl border border-stone-200 outline-none focus:border-saffron bg-white"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-6 text-sm font-bold ml-4">
+              <div className="text-green-600 flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full" />
+                Present: {Object.values(attendance).filter(v => v).length}
+              </div>
+              <div className="text-stone-400 flex items-center gap-2">
+                <div className="w-2 h-2 bg-stone-300 rounded-full" />
+                Total: {devotees.length}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredDevotees.map(d => {
+              const isPresent = attendance[d.id!];
+              return (
+                <button
+                  key={d.id}
+                  onClick={() => toggleAttendance(d.id!)}
+                  className={cn(
+                    "flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 group",
+                    isPresent 
+                      ? "bg-green-50 border-green-200 shadow-sm" 
+                      : "bg-white border-stone-100 hover:border-saffron/30"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm",
+                      isPresent ? "bg-green-600 text-white" : "bg-stone-50 text-stone-400"
+                    )}>
+                      {isPresent ? <Check size={20} /> : d.name[0]}
+                    </div>
+                    <div className="text-left">
+                      <p className={cn("font-bold text-sm", isPresent ? "text-green-800" : "text-stone-700")}>{d.name}</p>
+                      <p className="text-[10px] text-stone-400 font-mono italic">{d.contact}</p>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "w-6 h-6 rounded-lg flex items-center justify-center transition-all",
+                    isPresent ? "bg-green-100 text-green-600" : "bg-stone-50 text-stone-200 group-hover:text-stone-400"
+                  )}>
+                    {isPresent ? <CheckCircle2 size={14} /> : <X size={14} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
+export default AttendanceSheet;
+
+```
+
+## File: src/views/Dashboard.tsx
+```
+import React from 'react';
+import Layout from '../components/Layout';
+import { useAuth } from '../context/AuthContext';
+import OwnerDashboard from './dashboards/OwnerDashboard';
+import MentorDashboard from './dashboards/MentorDashboard';
+import UserDashboard from './dashboards/UserDashboard';
+
+const Dashboard = () => {
+  const { profile } = useAuth();
+
+  const renderDashboard = () => {
+    switch (profile?.role) {
+      case 'OWNER':
+        return <OwnerDashboard />;
+      case 'MENTOR':
+        return <MentorDashboard />;
+      default:
+        return <UserDashboard />;
+    }
+  };
+
+  return (
+    <Layout>
+      {renderDashboard()}
+    </Layout>
+  );
+};
+
+export default Dashboard;
+
+```
+
+## File: src/views/DatabaseManagement.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { db } from '../services/firebase';
+import { collection, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { Devotee } from '../types';
+import { useAuth } from '../context/AuthContext';
+import Layout from '../components/Layout';
+import { 
+  Search, 
+  Download, 
+  Trash2, 
+  ArrowUpDown, 
+  Users, 
+  Filter,
+  CheckCircle2
+} from 'lucide-react';
+import { cn } from '../lib/utils';
+
+const DatabaseManagement = () => {
+  const [devotees, setDevotees] = useState<Devotee[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'attendanceCount'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const { isOwner } = useAuth();
+
+  useEffect(() => {
+    const q = query(collection(db, 'devotees'), orderBy(sortBy, sortOrder));
+    return onSnapshot(q, (snapshot) => {
+      setDevotees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+    });
+  }, [sortBy, sortOrder]);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to remove this devotee from the database?')) return;
+    try {
+      await deleteDoc(doc(db, 'devotees', id));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Name', 'Contact', 'Mentor', 'Chanting', 'Attendance'];
+    const rows = devotees.map(d => [d.name, d.contact, d.mentor, d.chanting, d.attendanceCount]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `devotee_database_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const toggleSort = (field: 'name' | 'attendanceCount') => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const filteredDevotees = devotees.filter(d => 
+    d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    d.contact.includes(searchTerm)
+  );
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl text-saffron-dark font-serif font-bold">Devotee Database</h1>
+            <p className="text-stone-500">Centralized records of all temple visitors.</p>
+          </div>
+          <button 
+            onClick={exportToCSV}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Download size={18} /> Export CSV
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-3xl border border-stone-100 flex items-center gap-4">
+            <div className="bg-saffron/10 p-3 rounded-2xl text-saffron">
+              <Users size={24} />
+            </div>
+            <div>
+              <p className="text-xs text-stone-400 font-bold uppercase">Total Registered</p>
+              <p className="text-2xl font-serif font-bold text-stone-800">{devotees.length}</p>
+            </div>
+          </div>
+          {/* Add more stats if needed */}
+        </div>
+
+        <div className="iskcon-glass rounded-3xl p-6 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search by name or contact..."
+                className="w-full pl-12 pr-4 py-3 rounded-2xl border border-stone-200 outline-none focus:border-saffron bg-stone-50/30"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => toggleSort('name')}
+                className={cn("px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2", sortBy === 'name' ? "bg-saffron/10 text-saffron" : "text-stone-400")}
+              >
+                Name <ArrowUpDown size={14} />
+              </button>
+              <button 
+                onClick={() => toggleSort('attendanceCount')}
+                className={cn("px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2", sortBy === 'attendanceCount' ? "bg-saffron/10 text-saffron" : "text-stone-400")}
+              >
+                Attendance <ArrowUpDown size={14} />
+              </button>
+              <button className="p-2 text-stone-400 hover:text-stone-600"><Filter size={20} /></button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-stone-50/50 border-b border-stone-100">
+                <tr className="text-xs uppercase font-bold text-stone-400 tracking-wider">
+                  <th className="p-4">Name</th>
+                  <th className="p-4">Contact</th>
+                  <th className="p-4">Mentor</th>
+                  <th className="p-4">Attendance</th>
+                  {isOwner && <th className="p-4">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-50">
+                {filteredDevotees.map(d => (
+                  <tr key={d.id} className="hover:bg-stone-50 transition-colors">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-stone-50 rounded-full border border-stone-100 flex items-center justify-center font-bold text-stone-300">
+                          {d.name[0]}
+                        </div>
+                        <p className="font-bold text-stone-700">{d.name}</p>
+                      </div>
+                    </td>
+                    <td className="p-4 text-stone-500 font-mono text-sm">{d.contact}</td>
+                    <td className="p-4">
+                      <span className="text-xs italic text-stone-400">{d.mentor || 'Direct'}</span>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-stone-100 h-2 rounded-full overflow-hidden max-w-[60px]">
+                          <div 
+                            className="bg-gold h-full" 
+                            style={{ width: `${Math.min(d.attendanceCount * 10, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-stone-600">{d.attendanceCount}</span>
+                      </div>
+                    </td>
+                    {isOwner && (
+                      <td className="p-4">
+                        <button 
+                          onClick={() => handleDelete(d.id!)}
+                          className="text-stone-300 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
+export default DatabaseManagement;
+
+```
+
+## File: src/views/EventDetail.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { db } from '../services/firebase';
+import { 
+  doc, 
+  getDoc, 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  updateDoc, 
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  writeBatch,
+  getDocs
+} from 'firebase/firestore';
+import { Event, CallingAssignment, UserProfile, Devotee } from '../types';
+import { useAuth } from '../context/AuthContext';
+import Layout from '../components/Layout';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Phone, 
+  CheckCircle, 
+  XCircle, 
+  UserPlus, 
+  Eye, 
+  EyeOff, 
+  ChevronLeft,
+  Search,
+  Users,
+  ClipboardCheck,
+  MoreVertical,
+  MinusCircle,
+  Calendar
+} from 'lucide-react';
+import { cn } from '../lib/utils';
+
+const EventDetail = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { profile, isOwner, isMentor } = useAuth();
+  const [event, setEvent] = useState<Event | null>(null);
+  const [assignments, setAssignments] = useState<CallingAssignment[]>([]);
+  const [appUsers, setAppUsers] = useState<UserProfile[]>([]);
+  const [devotees, setDevotees] = useState<Devotee[]>([]);
+  
+  // Assignment State
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedDevotees, setSelectedDevotees] = useState<string[]>([]);
+  const [searchDevotee, setSearchDevotee] = useState('');
+
+  useEffect(() => {
+    if (!id) return;
+
+    // Fetch Event
+    const unsubEvent = onSnapshot(doc(db, 'events', id), (doc) => {
+      if (doc.exists()) setEvent({ id: doc.id, ...doc.data() } as Event);
+      else navigate('/');
+    });
+
+    // Fetch Assignments
+    let qA;
+    if (isOwner || isMentor) {
+      qA = query(collection(db, `events/${id}/assignments`));
+    } else if (profile?.uid) {
+      qA = query(collection(db, `events/${id}/assignments`), where('userId', '==', profile.uid));
+    }
+
+    let unsubAssignments = () => {};
+    if (qA) {
+      unsubAssignments = onSnapshot(qA, (snapshot) => {
+        setAssignments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CallingAssignment)));
+      });
+    }
+
+    if (isOwner) {
+      // Fetch Users for Assignment
+      const qU = query(collection(db, 'users'));
+      getDocs(qU).then(snap => {
+        let usrs = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
+        // Only show users belonging to this temple and NOT owners
+        usrs = usrs.filter(u => u.templeId === profile?.uid && u.role !== 'OWNER');
+        setAppUsers(usrs);
+      });
+
+      // Fetch Devotees for Assignment
+      const qD = query(collection(db, 'devotees'));
+      getDocs(qD).then(snap => {
+        let devs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee));
+        devs = devs.filter(d => d.templeId === profile?.uid);
+        setDevotees(devs);
+      });
+    }
+
+    return () => {
+      unsubEvent();
+      unsubAssignments();
+    };
+  }, [id, isOwner, isMentor, profile, navigate]);
+
+  const handleTogglePublic = async () => {
+    if (!event) return;
+    await updateDoc(doc(db, 'events', event.id!), { isPublic: !event.isPublic });
+  };
+
+  const handleUpdateAssignment = async (assignmentId: string, response: CallingAssignment['response']) => {
+    await updateDoc(doc(db, `events/${id}/assignments/${assignmentId}`), {
+      response,
+      status: 'COMPLETED',
+      updatedAt: serverTimestamp()
+    });
+  };
+
+  const handleBulkAssign = async () => {
+    if (!selectedUserId || selectedDevotees.length === 0 || !id) return;
+    
+    const batch = writeBatch(db);
+    selectedDevotees.forEach(devId => {
+      const devotee = devotees.find(d => d.id === devId);
+      if (!devotee) return;
+      
+      const assignRef = doc(collection(db, `events/${id}/assignments`));
+      batch.set(assignRef, {
+        eventId: id,
+        devoteeId: devId,
+        userId: selectedUserId,
+        devoteeName: devotee.name,
+        devoteeContact: devotee.contact,
+        status: 'PENDING',
+        response: 'NONE',
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    setIsAssigning(false);
+    setSelectedDevotees([]);
+    setSelectedUserId(null);
+  };
+
+  if (!event) return null;
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-2">
+            <button onClick={() => navigate('/')} className="text-stone-400 hover:text-saffron flex items-center gap-1 text-sm font-medium">
+              <ChevronLeft size={16} /> Back to Hub
+            </button>
+            <h1 className="text-4xl text-saffron-dark">{event.title}</h1>
+            <p className="text-stone-500 flex items-center gap-2">
+              <Calendar size={18} className="text-saffron" />
+              {new Date(event.date).toLocaleDateString(undefined, { dateStyle: 'full' })}
+            </p>
+          </div>
+
+          {isOwner && (
+            <div className="flex gap-2">
+              <button 
+                onClick={handleTogglePublic}
+                className={cn(
+                  "flex items-center gap-2 px-6 py-2 rounded-xl font-bold transition-all",
+                  event.isPublic ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                )}
+              >
+                {event.isPublic ? <><Eye size={18} /> Public</> : <><EyeOff size={18} /> Internal Only</>}
+              </button>
+              <button 
+                onClick={() => setIsAssigning(true)}
+                className="btn-primary flex items-center gap-2"
+              >
+                <UserPlus size={18} /> Assign Calling
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* User Specific: My Calling List */}
+        {!isOwner && !isMentor && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-serif text-stone-700">My Calling List</h2>
+              <span className="text-xs font-bold text-stone-400 uppercase bg-stone-100 px-3 py-1 rounded-full">
+                {assignments.length} assigned
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {assignments.map((assignment) => (
+                <div key={assignment.id} className="bg-white border border-stone-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-stone-800">{assignment.devoteeName}</h3>
+                        <a 
+                          href={`tel:${assignment.devoteeContact}`}
+                          className="text-saffron font-bold flex items-center gap-1 text-sm mt-1 hover:underline"
+                        >
+                          <Phone size={14} /> {assignment.devoteeContact}
+                        </a>
+                      </div>
+                      <div className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                        assignment.status === 'COMPLETED' ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                      )}>
+                        {assignment.status}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-stone-50 grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={() => handleUpdateAssignment(assignment.id!, 'COMING')}
+                      className={cn(
+                        "flex items-center justify-center gap-2 py-3 rounded-xl transition-all border",
+                        assignment.response === 'COMING' ? "bg-green-600 text-white border-green-600" : "bg-stone-50 text-stone-600 border-stone-100 hover:border-green-300"
+                      )}
+                    >
+                      <CheckCircle size={16} /> Coming
+                    </button>
+                    <button 
+                      onClick={() => handleUpdateAssignment(assignment.id!, 'NOT_COMING')}
+                      className={cn(
+                        "flex items-center justify-center gap-2 py-3 rounded-xl transition-all border",
+                        assignment.response === 'NOT_COMING' ? "bg-red-600 text-white border-red-600" : "bg-stone-50 text-stone-600 border-stone-100 hover:border-red-300"
+                      )}
+                    >
+                      <XCircle size={16} /> Not
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {assignments.length === 0 && (
+                <div className="col-span-full py-20 iskcon-glass rounded-3xl text-center text-stone-400 italic">
+                  No devotees assigned for this event. 
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Owner View: All Assignments & Progress */}
+        {(isOwner || isMentor) && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-serif text-stone-700">Calling Dashboard</h2>
+            <div className="iskcon-glass rounded-3xl overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-stone-50/50 border-b border-stone-100">
+                  <tr className="text-xs uppercase font-bold text-stone-400">
+                    <th className="p-4">Devotee</th>
+                    <th className="p-4">Assigned To</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Response</th>
+                    {isOwner && <th className="p-4">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-50">
+                  {assignments.map(ass => (
+                    <tr key={ass.id}>
+                      <td className="p-4">
+                        <p className="font-bold text-stone-700">{ass.devoteeName}</p>
+                        <p className="text-xs text-stone-400">{ass.devoteeContact}</p>
+                      </td>
+                      <td className="p-4">
+                        <span className="text-sm text-stone-600">
+                          {appUsers.find(u => u.uid === ass.userId)?.displayName || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={cn(
+                          "px-2 py-1 rounded-lg text-[10px] font-bold",
+                          ass.status === 'COMPLETED' ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"
+                        )}>
+                          {ass.status}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={cn(
+                          "px-2 py-1 rounded-lg text-[10px] font-bold uppercase",
+                          ass.response === 'COMING' ? "bg-green-100 text-green-700" :
+                          ass.response === 'NOT_COMING' ? "bg-red-100 text-red-700" : "bg-stone-100 text-stone-400"
+                        )}>
+                          {ass.response}
+                        </span>
+                      </td>
+                      {isOwner && (
+                        <td className="p-4">
+                          <button onClick={() => deleteDoc(doc(db, `events/${id}/assignments/${ass.id!}`))} className="text-stone-300 hover:text-red-500 transition-colors">
+                            <MinusCircle size={18} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Assign Calling Modal */}
+      {isAssigning && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+          >
+            <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+              <h2 className="text-2xl font-serif">Assign Calling List</h2>
+              <button 
+                onClick={() => {
+                  setIsAssigning(false);
+                  setSelectedDevotees([]);
+                  setSelectedUserId(null);
+                }}
+                className="text-stone-400 hover:text-saffron p-2"
+              >
+                <ChevronLeft className="rotate-90" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+              {/* Left: User Selection */}
+              <div className="w-full md:w-1/3 border-r border-stone-100 p-6 space-y-4 overflow-y-auto">
+                <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest">1. Select Sevak</h3>
+                <div className="space-y-2">
+                  {appUsers.map(user => (
+                    <button
+                      key={user.uid}
+                      onClick={() => setSelectedUserId(user.uid)}
+                      className={cn(
+                        "w-full flex items-center gap-3 p-3 rounded-2xl transition-all text-left",
+                        selectedUserId === user.uid ? "bg-saffron text-white shadow-lg" : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                      )}
+                    >
+                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold uppercase", selectedUserId === user.uid ? "bg-white/20" : "bg-stone-200")}>
+                        {user.displayName?.[0]}
+                      </div>
+                      <div className="truncate flex-1">
+                        <p className="font-bold text-sm leading-tight">{user.displayName}</p>
+                        <p className="text-[10px] opacity-70">{user.role}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right: Devotee Selection */}
+              <div className="flex-1 p-6 space-y-4 flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest">2. Select Devotees ({selectedDevotees.length})</h3>
+                  <div className="relative w-48">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                    <input 
+                      type="text" 
+                      placeholder="Search..." 
+                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-full border border-stone-200 outline-none"
+                      value={searchDevotee}
+                      onChange={e => setSearchDevotee(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto border border-stone-100 rounded-2xl">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-stone-50 sticky top-0">
+                      <tr>
+                        <th className="p-3 w-10">
+                          <input 
+                            type="checkbox" 
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedDevotees(devotees.map(d => d.id!));
+                              else setSelectedDevotees([]);
+                            }}
+                          />
+                        </th>
+                        <th className="p-3">Name</th>
+                        <th className="p-3">Contact</th>
+                        <th className="p-3">Mentor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-50">
+                      {devotees.filter(d => d.name.toLowerCase().includes(searchDevotee.toLowerCase())).map(d => (
+                        <tr key={d.id} className={cn(selectedDevotees.includes(d.id!) && "bg-saffron/5")}>
+                          <td className="p-3">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedDevotees.includes(d.id!)}
+                              onChange={() => {
+                                setSelectedDevotees(prev => 
+                                  prev.includes(d.id!) ? prev.filter(i => i !== d.id) : [...prev, d.id!]
+                                );
+                              }}
+                            />
+                          </td>
+                          <td className="p-3 font-medium">{d.name}</td>
+                          <td className="p-3 text-stone-500 font-mono text-xs">{d.contact}</td>
+                          <td className="p-3 text-stone-400 text-xs italic">{d.mentor}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-stone-50 border-t border-stone-100 flex justify-end gap-3">
+               <button 
+                onClick={() => setIsAssigning(false)}
+                className="btn-secondary"
+               >
+                Cancel
+               </button>
+               <button 
+                disabled={!selectedUserId || selectedDevotees.length === 0}
+                onClick={handleBulkAssign}
+                className="btn-primary"
+               >
+                Confirm Assignment ({selectedDevotees.length})
+               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </Layout>
+  );
+};
+
+export default EventDetail;
+
+```
+
+## File: src/views/Login.tsx
+```
+import React, { useState } from 'react';
+import { useNavigate, Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { signInWithGoogle, loginWithUserId } from '../services/firebase';
+import { motion, AnimatePresence } from 'motion/react';
+import { LogIn, User, Shield, Crown, Lock, ChevronRight, AlertCircle } from 'lucide-react';
+import { cn } from '../lib/utils';
+
+type LoginMode = 'user' | 'mentor' | 'owner';
+
+const Login = () => {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<LoginMode>('user');
+  const [userId, setUserId] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (loading) return (
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-cream font-serif text-saffron">
+       <div className="text-4xl font-bold animate-pulse">Radhe Radhe...</div>
+       <p className="mt-4 text-stone-400">Loading your profile</p>
+    </div>
+  );
+  if (user) return <Navigate to="/" />;
+
+  const handleGoogleLogin = async () => {
+    try {
+      setIsSubmitting(true);
+      await signInWithGoogle();
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Google login failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleIdLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await loginWithUserId(userId, password);
+      navigate('/');
+    } catch (err: any) {
+      setError('Invalid User ID or Password.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'user', label: 'User', icon: User, color: 'text-emerald-600' },
+    { id: 'mentor', label: 'Mentor', icon: Shield, color: 'text-blue-600' },
+    { id: 'owner', label: 'Owner', icon: Crown, color: 'text-amber-600' },
+  ];
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-cream p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-[450px] bg-white rounded-[32px] p-10 card-shadow border border-slate-100 flex flex-col items-center text-center space-y-8"
+      >
+        <div className="space-y-1">
+          <h1 className="text-4xl font-bold tracking-tight text-iskcon-dark">KrishnaSeva</h1>
+          <p className="text-xs saffron-text uppercase tracking-widest font-bold">Devotee Management</p>
+        </div>
+
+        {/* Level Tabs */}
+        <div className="flex w-full bg-slate-50 p-1 rounded-2xl border border-slate-100">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setMode(tab.id as LoginMode);
+                setError('');
+              }}
+              className={cn(
+                "flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-all duration-300 relative overflow-hidden",
+                mode === tab.id ? "bg-white shadow-sm text-slate-800" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <tab.icon size={16} />
+              <span className="text-[10px] uppercase font-bold tracking-wider">{tab.label}</span>
+              {mode === tab.id && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 w-full h-1 bg-saffron" />}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-full">
+          <AnimatePresence mode="wait">
+            {mode === 'owner' ? (
+              <motion.div 
+                key="owner-form"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="space-y-6"
+              >
+                <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 text-left space-y-2">
+                   <h3 className="text-amber-800 font-bold flex items-center gap-2">
+                     <Crown size={18} /> Owner Access
+                   </h3>
+                   <p className="text-xs text-amber-700 leading-relaxed">
+                     Only authorized owners can log in using Google. If you are a Mentor or User, please use the User ID tab.
+                   </p>
+                </div>
+
+                <button 
+                  onClick={handleGoogleLogin}
+                  disabled={isSubmitting}
+                  className="w-full btn-primary py-4 gap-3 bg-iskcon-dark border-none shadow-xl shadow-slate-100"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5 rounded-full" alt="google" />
+                  Sign in as Owner
+                </button>
+              </motion.div>
+            ) : (
+              <motion.form 
+                key="id-form"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                onSubmit={handleIdLogin}
+                className="space-y-4"
+              >
+                <div className="space-y-4 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 tracking-widest">Username / ID</label>
+                    <div className="relative">
+                      <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="e.g. sevak123"
+                        className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:bg-white focus:border-saffron focus:ring-4 ring-orange-50 outline-none transition-all text-sm font-medium"
+                        value={userId}
+                        onChange={e => setUserId(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 tracking-widest">Password</label>
+                    <div className="relative">
+                      <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input 
+                        type="password" 
+                        required
+                        placeholder="••••••••"
+                        className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:bg-white focus:border-saffron focus:ring-4 ring-orange-50 outline-none transition-all text-sm font-medium"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {error && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-red-50 text-red-600 text-xs py-2 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <AlertCircle size={14} /> {error}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <button 
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full btn-primary py-4 gap-3"
+                >
+                  Sign in as {mode === 'user' ? 'User' : 'Mentor'}
+                  <ChevronRight size={18} />
+                </button>
+              </motion.form>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <p className="text-[10px] text-slate-400 font-medium">
+          Hare Krishna, Hare Krishna, Krishna Krishna, Hare Hare<br/>
+          Hare Rama, Hare Rama, Rama Rama, Hare Hare
+        </p>
+      </motion.div>
+    </div>
+  );
+};
+
+export default Login;
+
+```
+
+## File: src/views/dashboards/MentorDashboard.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/firebase';
+import { collection, query, onSnapshot, getDocs } from 'firebase/firestore';
+import { Devotee, UserProfile } from '../../types';
+import { motion } from 'motion/react';
+import { Users, Phone, FileText, Search } from 'lucide-react';
+import { cn } from '../../lib/utils';
+
+const MentorDashboard = () => {
+  const [activeTab, setActiveTab] = useState<'facilitation' | 'users' | 'reports'>('facilitation');
+  const [devotees, setDevotees] = useState<Devotee[]>([]);
+  const [appUsers, setAppUsers] = useState<UserProfile[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const qD = query(collection(db, 'devotees'));
+    const unsubscribeD = onSnapshot(qD, (snapshot) => {
+      setDevotees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+    });
+
+    const qU = query(collection(db, 'users'));
+    const unsubscribeU = onSnapshot(qU, (snapshot) => {
+      setAppUsers(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));
+    });
+
+    return () => {
+      unsubscribeD();
+      unsubscribeU();
+    };
+  }, []);
+
+  const filteredDevotees = devotees.filter(d => 
+    d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    d.facilitatorName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-3xl font-serif text-saffron-dark">Mentor Insights</h2>
+        <p className="text-stone-500">Oversee facilitation and calling activities.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+        {[
+          { id: 'facilitation', label: 'Facilitation DB', icon: Users },
+          { id: 'users', label: 'User Directory', icon: Phone },
+          { id: 'reports', label: 'Calling Reports', icon: FileText },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-6 py-3 rounded-2xl font-medium transition-all",
+              activeTab === tab.id 
+                ? "bg-saffron text-white shadow-lg shadow-saffron/20" 
+                : "bg-white text-stone-600 hover:bg-stone-50 border border-stone-100"
+            )}
+          >
+            <tab.icon size={18} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="iskcon-glass rounded-3xl p-6 shadow-sm overflow-hidden min-h-[400px]">
+        {activeTab === 'facilitation' && (
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search devotees or facilitators..."
+                className="w-full pl-12 pr-4 py-3 rounded-2xl border border-stone-200 focus:border-saffron outline-none"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="text-stone-400 text-xs uppercase tracking-widest border-b border-stone-100">
+                    <th className="py-4 px-2">Devotee Name</th>
+                    <th className="py-4 px-2">Contact</th>
+                    <th className="py-4 px-2">Facilitator</th>
+                    <th className="py-4 px-2">Mentor</th>
+                    <th className="py-4 px-2">Chanting</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-50">
+                  {filteredDevotees.map((d) => (
+                    <tr key={d.id} className="hover:bg-stone-50/50">
+                      <td className="py-4 px-2 font-medium text-stone-800">{d.name}</td>
+                      <td className="py-4 px-2 text-stone-600">{d.contact}</td>
+                      <td className="py-4 px-2">
+                        <span className="bg-saffron/10 text-saffron-dark text-[10px] font-bold px-2 py-1 rounded-lg">
+                          {d.facilitatorName}
+                        </span>
+                      </td>
+                      <td className="py-4 px-2 text-stone-500">{d.mentor}</td>
+                      <td className="py-4 px-2">
+                        <span className="text-xs font-bold text-stone-400">{d.chanting} rounds</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'users' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {appUsers.map((user) => (
+              <div key={user.uid} className="bg-stone-50/50 border border-stone-100 p-4 rounded-2xl flex items-center gap-4">
+                <div className="w-12 h-12 bg-saffron/10 rounded-full flex items-center justify-center text-saffron font-bold text-xl uppercase">
+                  {user.displayName?.[0] || '?'}
+                </div>
+                <div>
+                  <h4 className="font-bold text-stone-800">{user.displayName}</h4>
+                  <p className="text-xs text-stone-500">{user.email}</p>
+                  <p className="text-xs font-bold text-saffron-dark mt-1 flex items-center gap-1">
+                    <Phone size={10} /> {user.contact || 'No contact'}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="flex flex-col items-center justify-center py-20 text-stone-400">
+            <FileText size={64} className="opacity-20 mb-4" />
+            <p className="text-lg font-serif">Detailed reports will be generated per event activity.</p>
+            <p className="text-sm">Owner must assign calling lists to see metrics here.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default MentorDashboard;
+
+```
+
+## File: src/views/dashboards/OwnerDashboard.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/firebase';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp, 
+  updateDoc, 
+  doc, 
+  setDoc 
+} from 'firebase/firestore';
+import { Event, UserProfile } from '../../types';
+import { motion } from 'motion/react';
+import { Plus, Calendar, Users, Eye, EyeOff, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { registerSevak } from '../../services/firebase';
+import { cn } from '../../lib/utils';
+
+const OwnerDashboard = () => {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [activeTab, setActiveTab] = useState<'events' | 'personnel'>('events');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registrationMode, setRegistrationMode] = useState<'USER' | 'MENTOR'>('USER');
+  const [regForm, setRegForm] = useState({ name: '', contact: '' });
+  const [generatedCreds, setGeneratedCreds] = useState<{ id: string, pass: string } | null>(null);
+  
+  const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '', mediaUrl: '' });
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    const qE = query(collection(db, 'events'), orderBy('date', 'desc'));
+    const unsubE = onSnapshot(qE, (snapshot) => {
+      const allEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
+      setEvents(allEvents.filter(e => e.templeId === profile?.uid));
+    });
+
+    const qU = query(collection(db, 'users'));
+    const unsubU = onSnapshot(qU, (snapshot) => {
+      const allUsers = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
+      setUsers(allUsers.filter(u => u.templeId === profile?.uid));
+    });
+
+    return () => {
+      unsubE();
+      unsubU();
+    };
+  }, [profile?.uid]);
+
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    await updateDoc(doc(db, 'users', userId), { role: newRole });
+  };
+
+  const handleRegisterSevak = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regForm.name || !regForm.contact) return;
+    
+    setIsRegistering(true);
+    try {
+      // 1. Generate unique ID (name + 3 random digits)
+      const uniqueId = `${regForm.name.toLowerCase().replace(/\s/g, '')}${Math.floor(100 + Math.random() * 900)}`;
+      const password = Math.random().toString(36).slice(-8); // Random 8 character password
+
+      // 2. Register in Firebase Auth (Using helper)
+      const userCred = await registerSevak(uniqueId, password);
+      
+      // 3. Save to Firestore
+      await setDoc(doc(db, 'users', userCred.user.uid), {
+        displayName: regForm.name,
+        contact: regForm.contact,
+        role: registrationMode,
+        email: userCred.user.email,
+        username: uniqueId,
+        password: password, // Saving for owner to see and provide
+        templeId: profile?.uid,
+        createdAt: serverTimestamp()
+      });
+
+      setGeneratedCreds({ id: uniqueId, pass: password });
+      setRegForm({ name: '', contact: '' });
+    } catch (err: any) {
+      alert(`Registration failed: ${err.message}`);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  const resizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit before resize to avoid huge browser mem spikes
+        alert("Image is too large. Please select a smaller photo.");
+        return;
+      }
+      const base64 = await resizeImage(file);
+      setNewEvent({...newEvent, mediaUrl: base64});
+    }
+  };
+
+  const handleCreateEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEvent.title || !newEvent.date) return;
+
+    try {
+      await addDoc(collection(db, 'events'), {
+        ...newEvent,
+        isPublic: false,
+        templeId: profile?.uid, // Save templeId!
+        createdBy: profile?.uid,
+        createdAt: serverTimestamp(),
+      });
+      setIsModalOpen(false);
+      setNewEvent({ title: '', date: '', description: '', mediaUrl: '' });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl text-saffron-dark underline decoration-gold underline-offset-4 decoration-2">Owner Control Panel</h2>
+          <p className="text-stone-500 mt-1">Manage events, assignments, and temple growth.</p>
+        </div>
+        <div className="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
+          <button 
+            onClick={() => setActiveTab('events')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", activeTab === 'events' ? "bg-saffron text-white" : "text-stone-500 hover:bg-stone-50")}
+          >
+            Manage Events
+          </button>
+          <button 
+            onClick={() => setActiveTab('personnel')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", activeTab === 'personnel' ? "bg-saffron text-white" : "text-stone-500 hover:bg-stone-50")}
+          >
+            Personnel
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'events' ? (
+        <div className="space-y-6">
+          <div className="flex justify-end">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="btn-primary flex items-center justify-center gap-2 shadow-lg shadow-saffron/30"
+            >
+              <Plus size={18} />
+              New Event
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {events.map((event) => (
+              <motion.div 
+                key={event.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="iskcon-glass rounded-3xl overflow-hidden flex flex-col group cursor-pointer hover:border-saffron/50 transition-all"
+                onClick={() => navigate(`/events/${event.id}`)}
+              >
+                {event.mediaUrl ? (
+                  <img src={event.mediaUrl} alt={event.title} className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500" />
+                ) : (
+                  <div className="w-full h-48 bg-stone-100 flex items-center justify-center text-stone-300">
+                    <Calendar size={48} />
+                  </div>
+                )}
+                <div className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-xl font-bold text-stone-800 line-clamp-1">{event.title}</h3>
+                    {event.isPublic ? (
+                      <span className="bg-green-100 text-green-700 text-[10px] uppercase font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                        <Eye size={10} /> Live
+                      </span>
+                    ) : (
+                      <span className="bg-stone-100 text-stone-500 text-[10px] uppercase font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                        <EyeOff size={10} /> Draft
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2 text-sm text-stone-600">
+                    <p className="flex items-center gap-2"><Calendar size={14} className="text-saffron" /> {new Date(event.date).toLocaleDateString()}</p>
+                    <p className="line-clamp-2 italic font-serif opacity-80">{event.description || 'No description provided.'}</p>
+                  </div>
+                  <div className="pt-4 border-t border-stone-100 flex justify-between items-center text-xs font-bold text-stone-400 uppercase tracking-wider">
+                    <span className="flex items-center gap-1"><Users size={14} /> View Details</span>
+                    <span className="text-saffron-dark">Click to Manage</span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl w-full p-0 flex flex-col md:flex-row overflow-hidden shadow-sm border border-slate-100 min-h-[600px]"
+        >
+          {/* Left Column: List */}
+          <div className="flex-1 p-8 overflow-y-auto space-y-6">
+            <div className="flex justify-between items-center border-b border-stone-100 pb-4">
+               <h2 className="text-2xl font-serif">Authorized Personnel</h2>
+            </div>
+            <div className="space-y-3">
+              {users.map(u => (
+                <div key={u.uid} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
+                  <div className="flex-1">
+                    <p className="font-bold text-slate-800 text-lg">{u.displayName}</p>
+                    <p className="text-xs text-slate-500 mb-2">{u.email}</p>
+                    <div className="flex gap-1">
+                      {['USER', 'MENTOR', 'OWNER'].map(role => (
+                        <button 
+                          key={role}
+                          onClick={() => handleUpdateRole(u.uid, role)}
+                          className={cn(
+                            "px-3 py-1 rounded-md text-[10px] font-bold transition-all uppercase tracking-widest",
+                            u.role === role ? "bg-iskcon-dark text-white shadow-sm" : "bg-white text-slate-400 border border-slate-100 hover:bg-slate-100"
+                          )}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-100 min-w-[200px]">
+                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Generated Credentials</p>
+                     <p className="text-sm font-mono font-medium text-slate-700 break-all select-all">
+                       ID: {(u as any).username || 'N/A'} 
+                     </p>
+                     <p className="text-sm font-mono font-medium text-slate-700 break-all select-all">
+                       Pass: {(u as any).password || '••••'}
+                     </p>
+                     {!(u as any).username && (
+                        <p className="text-[10px] text-amber-500 mt-1 italic">Not created via register form.</p>
+                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right Column: Registration */}
+          <div className="w-full md:w-96 bg-slate-50 p-8 border-l border-slate-200 space-y-6">
+            <div className="flex justify-between items-center md:block">
+               <h3 className="text-xl font-serif">Add Devotee / Mentor</h3>
+            </div>
+
+            {generatedCreds ? (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white p-6 rounded-2xl border-2 border-saffron/20 border-dashed text-center space-y-4 shadow-sm"
+              >
+                <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <Shield size={24} />
+                </div>
+                <p className="text-xs font-bold text-saffron uppercase tracking-widest">Login Details Generated</p>
+                <div className="bg-slate-50 p-4 rounded-xl space-y-3 text-left border border-slate-100">
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold">User ID</p>
+                    <p className="font-mono text-base font-bold select-all text-slate-800">{generatedCreds.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold">Password</p>
+                    <p className="font-mono text-base font-bold select-all text-slate-800">{generatedCreds.pass}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setGeneratedCreds(null)}
+                  className="w-full btn-secondary text-sm py-3"
+                >
+                  Register Another
+                </button>
+              </motion.div>
+            ) : (
+              <form onSubmit={handleRegisterSevak} className="space-y-5">
+                <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                  <button 
+                    type="button"
+                    onClick={() => setRegistrationMode('USER')}
+                    className={cn("flex-1 py-2.5 rounded-lg text-xs font-bold transition-all uppercase tracking-widest", registrationMode === 'USER' ? "bg-saffron text-white shadow-md" : "text-slate-400 hover:text-slate-600")}
+                  >
+                    User
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setRegistrationMode('MENTOR')}
+                    className={cn("flex-1 py-2.5 rounded-lg text-xs font-bold transition-all uppercase tracking-widest", registrationMode === 'MENTOR' ? "bg-saffron text-white shadow-md" : "text-slate-400 hover:text-slate-600")}
+                  >
+                    Mentor
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
+                  <input 
+                    type="text" required
+                    placeholder="e.g. Rahul Arya"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-saffron focus:ring-4 ring-orange-50 outline-none text-sm font-medium transition-all"
+                    value={regForm.name}
+                    onChange={e => setRegForm({...regForm, name: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contact Number</label>
+                  <input 
+                    type="tel" required
+                    placeholder="e.g. +91 98765..."
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-saffron focus:ring-4 ring-orange-50 outline-none text-sm font-medium transition-all"
+                    value={regForm.contact}
+                    onChange={e => setRegForm({...regForm, contact: e.target.value})}
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={isRegistering}
+                  className="w-full btn-primary py-3.5 text-sm shadow-orange-100 mt-2"
+                >
+                  {isRegistering ? 'Generating Credentials...' : `Register ${registrationMode === 'USER' ? 'User' : 'Mentor'}`}
+                </button>
+              </form>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Create Event Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl w-full max-w-lg p-8 space-y-6"
+          >
+            <div className="flex justify-between items-center border-b border-stone-100 pb-4">
+              <h2 className="text-2xl font-serif">Create New Event</h2>
+              <button onClick={() => setIsModalOpen(false)}><Plus className="rotate-45 text-stone-400 hover:text-saffron" /></button>
+            </div>
+            
+            <form onSubmit={handleCreateEvent} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-stone-500 uppercase">Event Title</label>
+                <input 
+                  type="text" required
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-saffron outline-none transition-all"
+                  value={newEvent.title}
+                  onChange={e => setNewEvent({...newEvent, title: e.target.value})}
+                  placeholder="e.g. Janmashtami Festival"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-stone-500 uppercase">Date</label>
+                <input 
+                  type="date" required
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-saffron outline-none transition-all"
+                  value={newEvent.date}
+                  onChange={e => setNewEvent({...newEvent, date: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-stone-500 uppercase">Description</label>
+                <textarea 
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-saffron outline-none transition-all"
+                  value={newEvent.description}
+                  onChange={e => setNewEvent({...newEvent, description: e.target.value})}
+                  placeholder="Tell us about the event..."
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-stone-500 uppercase">Event Photo</label>
+                <input 
+                  type="file"
+                  accept="image/*"
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-saffron outline-none transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-orange-50 file:text-saffron hover:file:bg-orange-100"
+                  onChange={handleImageChange}
+                />
+                {newEvent.mediaUrl && <img src={newEvent.mediaUrl} alt="Preview" className="h-20 w-32 object-cover rounded shadow-sm mt-2" />}
+              </div>
+              <button type="submit" className="w-full btn-primary py-4 text-lg shadow-xl shadow-saffron/30">Create Blissful Event</button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default OwnerDashboard;
+
+```
+
+## File: src/views/dashboards/UserDashboard.tsx
+```
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/firebase';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Event, Devotee } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { motion } from 'motion/react';
+import { Calendar, UserPlus, Phone, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { cn } from '../../lib/utils';
+
+const UserDashboard = () => {
+  const [activeTab, setActiveTab] = useState<'events' | 'facilitation'>('events');
+  const [events, setEvents] = useState<Event[]>([]);
+  const [newDevotee, setNewDevotee] = useState({ name: '', contact: '', mentor: '', chanting: '' });
+  const [recentAdditions, setRecentAdditions] = useState<Devotee[]>([]);
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Only fetch public events
+    const qE = query(collection(db, 'events'), where('isPublic', '==', true));
+    const unsubscribeE = onSnapshot(qE, (snapshot) => {
+      setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event)));
+    });
+
+    let unsubscribeD = () => {};
+    // Recent facilitation by this user
+    if (profile?.uid) {
+      const qD = query(collection(db, 'devotees'), where('facilitatorId', '==', profile.uid));
+      unsubscribeD = onSnapshot(qD, (snapshot) => {
+        setRecentAdditions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+      });
+    }
+
+    return () => {
+      unsubscribeE();
+      unsubscribeD();
+    };
+  }, [profile]);
+
+  const handleAddDevotee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDevotee.name || !newDevotee.contact) return;
+
+    try {
+      await addDoc(collection(db, 'devotees'), {
+        ...newDevotee,
+        facilitatorId: profile?.uid,
+        facilitatorName: profile?.displayName || 'Anonymous',
+        attendanceCount: 0,
+        createdAt: serverTimestamp(),
+      });
+      setNewDevotee({ name: '', contact: '', mentor: '', chanting: '' });
+      alert('Devotee added successfully!');
+    } catch (error) {
+      console.error(error);
+      alert('Error adding devotee. Duplicate entry might be restricted.');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-serif text-saffron-dark">Sevak Dashboard</h2>
+          <p className="text-stone-500 italic font-serif">"Selfless service is the highest worship."</p>
+        </div>
+        <div className="flex bg-stone-100 p-1 rounded-2xl border border-stone-200">
+          <button 
+            onClick={() => setActiveTab('events')}
+            className={cn("px-6 py-2 rounded-xl transition-all font-medium", activeTab === 'events' ? "bg-white shadow text-saffron-dark" : "text-stone-500")}
+          >
+            Events
+          </button>
+          <button 
+            onClick={() => setActiveTab('facilitation')}
+            className={cn("px-6 py-2 rounded-xl transition-all font-medium", activeTab === 'facilitation' ? "bg-white shadow text-saffron-dark" : "text-stone-500")}
+          >
+            Facilitation
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'events' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {events.length === 0 ? (
+            <div className="col-span-full py-20 text-center text-stone-400 font-serif">
+              <Calendar size={64} className="mx-auto opacity-10 mb-4" />
+              <p>No active events found. Please wait for the administrator to publish events.</p>
+            </div>
+          ) : (
+            events.map((event) => (
+              <motion.div 
+                key={event.id}
+                whileHover={{ y: -5 }}
+                className="iskcon-glass rounded-3xl p-6 space-y-4 hover:border-saffron/30 transition-all cursor-pointer"
+                onClick={() => navigate(`/events/${event.id}`)}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="bg-saffron/10 p-3 rounded-2xl text-saffron">
+                    <Calendar size={24} />
+                  </div>
+                  <ChevronRight size={20} className="text-stone-300" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-stone-800">{event.title}</h3>
+                  <p className="text-sm text-stone-500 mt-1">{new Date(event.date).toLocaleDateString(undefined, { dateStyle: 'full' })}</p>
+                </div>
+                <div className="bg-saffron/5 rounded-2xl p-4 text-sm text-stone-600">
+                  <p className="line-clamp-2 italic font-serif leading-relaxed opacity-80">
+                    {event.description || 'Join us for this blissful celebration at the temple.'}
+                  </p>
+                </div>
+                <div className="pt-2 flex items-center justify-between text-xs font-bold text-saffron uppercase">
+                  <span>View My List</span>
+                  <span>Open Seva &rarr;</span>
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+      )}
+
+      {activeTab === 'facilitation' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="iskcon-glass rounded-3xl p-8 space-y-6">
+              <div className="flex items-center gap-4 border-b border-stone-100 pb-4">
+                <div className="bg-gold/20 p-2 rounded-lg text-saffron-dark"><UserPlus size={24} /></div>
+                <h3 className="text-2xl font-serif">Add New Devotee</h3>
+              </div>
+              
+              <form onSubmit={handleAddDevotee} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-500 uppercase">Full Name</label>
+                  <input 
+                    type="text" required
+                    className="w-full px-4 py-3 rounded-xl border border-stone-100 bg-stone-50/50 focus:bg-white focus:border-saffron outline-none transition-all"
+                    value={newDevotee.name}
+                    onChange={e => setNewDevotee({...newDevotee, name: e.target.value})}
+                    placeholder="Enter name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-500 uppercase">Contact Number</label>
+                  <input 
+                    type="tel" required
+                    className="w-full px-4 py-3 rounded-xl border border-stone-100 bg-stone-50/50 focus:bg-white focus:border-saffron outline-none transition-all"
+                    value={newDevotee.contact}
+                    onChange={e => setNewDevotee({...newDevotee, contact: e.target.value})}
+                    placeholder="Phone number"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-500 uppercase">Mentor Name</label>
+                  <input 
+                    type="text"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-100 bg-stone-50/50 focus:bg-white focus:border-saffron outline-none transition-all"
+                    value={newDevotee.mentor}
+                    onChange={e => setNewDevotee({...newDevotee, mentor: e.target.value})}
+                    placeholder="Reference mentor"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-500 uppercase">Chanting (Rounds)</label>
+                  <input 
+                    type="number"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-100 bg-stone-50/50 focus:bg-white focus:border-saffron outline-none transition-all"
+                    value={newDevotee.chanting}
+                    onChange={e => setNewDevotee({...newDevotee, chanting: e.target.value})}
+                    placeholder="How many rounds?"
+                  />
+                </div>
+                <button type="submit" className="md:col-span-2 btn-primary py-4 text-lg mt-2">Save Devotee Record</button>
+              </form>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-stone-400 uppercase tracking-widest pl-2">Recent Additions</h4>
+            <div className="space-y-3">
+              {recentAdditions.map((d) => (
+                <div key={d.id} className="bg-white border border-stone-100 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-stone-800">{d.name}</p>
+                    <p className="text-xs text-stone-500">{d.contact}</p>
+                  </div>
+                  <div className="bg-green-100 text-green-600 p-2 rounded-full">
+                    <CheckCircle2 size={16} />
+                  </div>
+                </div>
+              ))}
+              {recentAdditions.length === 0 && (
+                <p className="text-sm text-stone-400 italic text-center py-10 bg-stone-50/50 rounded-2xl border border-dashed border-stone-200">
+                  No devotees added yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default UserDashboard;
+
+```
+
+## File: index.html
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+```
+
+## File: package.json
+```json
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "firebase": "^12.12.1",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.14.2",
+    "tailwind-merge": "^3.5.0",
+    "vite": "^6.2.0"
+  },
+  "devDependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
+
+```
+

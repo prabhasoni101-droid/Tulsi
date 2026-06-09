@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App users with different roles (USER, MENTOR, OWNER)",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "MENTOR", "OWNER"] },
+        "contact": { "type": "string" },
+        "templeId": { "type": "string", "description": "Reference to the temple group" },
+        "mentorId": { "type": "string", "description": "Reference to a MENTOR user" }
+      },
+      "required": ["email", "role"]
+    },
+    "TempleHistory": {
+      "title": "Temple History",
+      "description": "Log of activities for undo/redo",
+      "type": "object",
+      "properties": {
+        "templeId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string" },
+        "isUndone": { "type": "boolean", "default": false },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "undoneAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["templeId", "type"]
+    },
+    "Devotee": {
+      "title": "Devotee",
+      "description": "Main database of devotees",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "contact": { "type": "string" },
+        "mentor": { "type": "string", "description": "Mentor name or reference" },
+        "chanting": { "type": "string", "description": "Rounds of chanting" },
+        "facilitatorId": { "type": "string", "description": "User who added them" },
+        "facilitatorName": { "type": "string" },
+        "attendanceCount": { "type": "number", "default": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isDeleted": { "type": "boolean", "default": false },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "contact"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Temple events",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "mediaUrl": { "type": "string" },
+        "isPublic": { "type": "boolean", "default": false },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isDeleted": { "type": "boolean", "default": false },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date"]
+    },
+    "CallingAssignment": {
+      "title": "Calling Assignment",
+      "description": "Specific devotee assigned to a user for an event",
+      "type": "object",
+      "properties": {
+        "devoteeId": { "type": "string" },
+        "userId": { "type": "string", "description": "Assignee" },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED"], "default": "PENDING" },
+        "response": { "type": "string", "enum": ["COMING", "NOT_COMING", "UNREACHABLE", "NONE"], "default": "NONE" },
+        "devoteeName": { "type": "string" },
+        "devoteeContact": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["devoteeId", "userId"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Attendance record for a devotee in an event",
+      "type": "object",
+      "properties": {
+        "devoteeId": { "type": "string" },
+        "present": { "type": "boolean" },
+        "markedAt": { "type": "string", "format": "date-time" },
+        "markedBy": { "type": "string" }
+      },
+      "required": ["devoteeId", "present"]
+    },
+    "Template": {
+      "title": "Template",
+      "description": "Custom attendance form configurations",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "fields"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/templates/{templateId}": {
+      "schema": "Template",
+      "description": "Form configurations"
+    },
+    "/devotees/{devoteeId}": {
+      "schema": "Devotee",
+      "description": "Global devotee database"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Event documents"
+    },
+    "/events/{eventId}/assignments/{assignmentId}": {
+      "schema": "CallingAssignment",
+      "description": "Individual calling assignments for an event"
+    },
+    "/events/{eventId}/attendance/{devoteeId}": {
+      "schema": "Attendance",
+      "description": "Attendance list for an event"
+    },
+    "/temples/{templeId}/history/{historyId}": {
+      "schema": "TempleHistory",
+      "description": "Activity logs for undo/redo"
+    }
+  }
+}

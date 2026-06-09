@@ -1,0 +1,639 @@
+[
+  {
+    "id": "TC001",
+    "title": "Owner signs in and reaches the owner dashboard",
+    "description": "This verifies that an Owner can start sign-in and reach the owner dashboard after completing the owner authentication flow.",
+    "category": "Role-Based Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the owner dashboard is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "User signs in and reaches the user dashboard",
+    "description": "This verifies that a User can sign in from the login page and land on the correct role-based dashboard.",
+    "category": "Role-Based Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the User role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the user ID field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user dashboard is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Mentor signs in and reaches the mentor dashboard",
+    "description": "This verifies that a Mentor can sign in from the login page and land on the correct role-based dashboard.",
+    "category": "Role-Based Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Mentor role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mentor ID field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the mentor dashboard is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Mark attendance from the attendance sheet",
+    "description": "An owner can search the attendance sheet, mark a devotee present, and see the attendance state update.",
+    "category": "Attendance Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the login field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the attendance sheet"
+      },
+      {
+        "type": "action",
+        "description": "Search for a devotee on the attendance sheet"
+      },
+      {
+        "type": "action",
+        "description": "Mark the devotee as present"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the attendance state updates for the selected devotee"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Submit a public attendance check-in",
+    "description": "A public attendee can open a QR-based check-in page, enter the required devotee details, and see the event attendance recorded.",
+    "category": "Attendance Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to a public attendance page"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the required devotee information"
+      },
+      {
+        "type": "action",
+        "description": "Submit the public check-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a check-in confirmation is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the event attendance is recorded for the submitted devotee"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "User can log out from the dashboard and return to login",
+    "description": "This verifies that a signed-in user can log out from the dashboard and is returned to the login page.",
+    "category": "Role-Based Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the User role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the user ID field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Log out from the sidebar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the login page is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Review and update attendance from an event detail page",
+    "description": "An authenticated user can open an event, review attendance information, mark attendance, and see the updated status on the event detail view.",
+    "category": "Attendance Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the login field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open an event detail page"
+      },
+      {
+        "type": "action",
+        "description": "Review the event attendance information"
+      },
+      {
+        "type": "action",
+        "description": "Mark attendance for an assigned devotee"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated attendance status is visible on the event page"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Signed-in user sees role-specific dashboard content",
+    "description": "This verifies that a signed-in user lands on a dashboard with role-appropriate stats and event information.",
+    "category": "Role-Based Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the User role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the user ID field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify role-specific dashboard stats are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify assigned event information is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Owner searches and edits a devotee record",
+    "description": "This verifies that an Owner can find a devotee in the database, update the record, and see the saved change reflected in the list.",
+    "category": "Devotee Database Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "action",
+        "description": "Open the database management page"
+      },
+      {
+        "type": "action",
+        "description": "Search for a devotee record"
+      },
+      {
+        "type": "action",
+        "description": "Open the devotee record for editing"
+      },
+      {
+        "type": "action",
+        "description": "Update a devotee detail"
+      },
+      {
+        "type": "action",
+        "description": "Save the devotee record"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated devotee entry is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Owner adds a new devotee to the database",
+    "description": "This verifies that an Owner can create a new devotee record and see it appear in the database list.",
+    "category": "Devotee Database Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "action",
+        "description": "Open the database management page"
+      },
+      {
+        "type": "action",
+        "description": "Start adding a new devotee record"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the required devotee details"
+      },
+      {
+        "type": "action",
+        "description": "Save the new devotee record"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new devotee entry is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Signed-in mentor can navigate away from the dashboard",
+    "description": "This verifies that a Mentor can use dashboard navigation to reach another available section.",
+    "category": "Role-Based Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Mentor role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the mentor ID field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Use the sidebar to open another available section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected section is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "View event-specific attendance summary",
+    "description": "An authenticated user can open an event detail page and review the event summary and attendance-related information.",
+    "category": "Event Detail View",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the login field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open an event detail page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the event summary is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify attendance-related information is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Owner deletes a devotee record from the database",
+    "description": "This verifies that an Owner can remove a devotee record and confirm it no longer appears in the active list.",
+    "category": "Devotee Database Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "action",
+        "description": "Open the database management page"
+      },
+      {
+        "type": "action",
+        "description": "Create or locate a devotee record to remove"
+      },
+      {
+        "type": "action",
+        "description": "Delete the devotee record"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the deletion"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the devotee entry is no longer displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Open a devotee profile and review history details",
+    "description": "A user can open a devotee profile page and review the devotee's history and chanting or contact details.",
+    "category": "Devotee Profile View",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /profile/:id"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the devotee profile is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify history and chanting or contact details are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "Owner imports devotee records from CSV",
+    "description": "This verifies that an Owner can import devotee data from a CSV file and see the imported records added to the database.",
+    "category": "Devotee Database Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "action",
+        "description": "Open the database management page"
+      },
+      {
+        "type": "action",
+        "description": "Start the CSV import flow"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid CSV file"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the import"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify imported devotee records are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Search devotees on the attendance sheet",
+    "description": "An owner can search the attendance sheet and narrow the visible devotee list to matching results.",
+    "category": "Attendance Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the login field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the attendance sheet"
+      },
+      {
+        "type": "action",
+        "description": "Search for a devotee on the attendance sheet"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify matching devotees are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify non-matching devotees are hidden"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Owner exports devotee data from the database",
+    "description": "This verifies that an Owner can export devotee data from the database successfully.",
+    "category": "Devotee Database Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Select the Owner role"
+      },
+      {
+        "type": "action",
+        "description": "Start owner sign-in"
+      },
+      {
+        "type": "action",
+        "description": "Complete the sign-in flow"
+      },
+      {
+        "type": "action",
+        "description": "Open the database management page"
+      },
+      {
+        "type": "action",
+        "description": "Export the devotee data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the export action is available and completes"
+      }
+    ],
+    "priority": "Medium"
+  }
+]
