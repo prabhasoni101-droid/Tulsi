@@ -12,6 +12,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isGoogleSignIn() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
     function userPath() {
       return /databases/$(database)/documents/users/$(request.auth.uid);
     }
@@ -116,6 +121,11 @@ service cloud.firestore {
             && resource.data.keys().hasAll(['displayName', 'templeId']));
       allow create: if isSignedIn() && (
         (request.auth.uid == userId && isValidUser(incoming()) && incoming().role == 'USER')
+        || (request.auth.uid == userId
+            && isGoogleSignIn()
+            && isValidUser(incoming())
+            && incoming().role == 'OWNER'
+            && incoming().templeId == request.auth.uid)
         || (isOwner() && isValidUser(incoming()) && incoming().templeId == userTempleId())
       );
       allow update: if isSignedIn() && (

@@ -78,7 +78,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         async (profileSnap) => {
           if (!profileSnap.exists()) {
             const isGoogleSignIn = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
-            if (isGoogleSignIn && ownerEmail && firebaseUser.email?.toLowerCase() === ownerEmail) {
+            const expectedMode = sessionStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
+            const isOwnerBootstrap =
+              isGoogleSignIn &&
+              (expectedMode === 'owner' ||
+                (!!ownerEmail && firebaseUser.email?.toLowerCase() === ownerEmail));
+
+            if (isOwnerBootstrap) {
+              sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
               const newProfile: UserProfile = {
                 uid: firebaseUser.uid,
                 displayName: firebaseUser.displayName || 'Owner',
@@ -86,7 +93,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: 'OWNER',
                 templeId: firebaseUser.uid,
               };
-              await setDoc(profileRef, newProfile);
+              try {
+                await setDoc(profileRef, {
+                  ...newProfile,
+                  isDeleted: false,
+                });
+              } catch (error) {
+                console.error('Owner profile bootstrap failed:', error);
+                setProfile(null);
+                setProfileError('Could not initialize owner portal. Please check Firestore permissions.');
+                setLoading(false);
+              }
               return;
             }
             setProfile(null);
