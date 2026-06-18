@@ -42,7 +42,7 @@ const ProtectedRoute: React.FC<{
       </div>
     );
   }
-  if (!roleMeetsMinimum(profile.role, minRole)) {
+  if (!roleMeetsMinimum(profile.role as UserRole, minRole as UserRole)) {
     return <Navigate to="/" replace />;
   }
 

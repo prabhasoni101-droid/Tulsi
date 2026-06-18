@@ -17,7 +17,7 @@ import { User, Shield, Crown, Lock, ChevronRight, AlertCircle, Eye, EyeOff } fro
 import { cn } from '../lib/utils';
 
 const Login = () => {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>('user');
   const [userId, setUserId] = useState('');
@@ -35,13 +35,13 @@ const Login = () => {
     }
   }, []);
 
-  if (loading) return (
+  if (loading || (user && !profile)) return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 font-sans text-primary">
        <div className="text-4xl font-bold animate-pulse">Radhe Radhe...</div>
        <p className="mt-4 text-slate-400">Loading your profile</p>
     </div>
   );
-  if (user) return <Navigate to="/" />;
+  if (user && profile) return <Navigate to="/" replace />;
 
   const handleGoogleLogin = async () => {
     setError('');

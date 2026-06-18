@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, collectionGroup, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, collectionGroup, getDocs, getDoc } from 'firebase/firestore';
 import { Event, Devotee } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { motion } from 'motion/react';
@@ -95,38 +95,66 @@ const UserDashboard = () => {
         setEvents(allEvents);
       });
     } else {
-      let latestEvents: Event[] = [];
-      let latestAssignedEventIds = new Set<string>();
+      let publicEvents: Event[] = [];
+      let assignedEvents: Event[] = [];
+      let isMounted = true;
 
-      const updateFilteredEvents = () => {
-        setEvents(latestEvents.filter(e => e.isPublic === true || latestAssignedEventIds.has(e.id!)));
-      };
-
-      unsubscribeE = onSnapshot(collection(db, 'events'), (snapshot) => {
-        latestEvents = snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as Event))
-          .filter(e => e.templeId === profile.templeId && !e.isDeleted);
-        updateFilteredEvents();
-      });
-
-      const qAssignments = query(
-        collectionGroup(db, 'assignments'),
-        where('userId', '==', profile.uid)
-      );
-
-      unsubscribeA = onSnapshot(qAssignments, (snapshot) => {
-        const assignedIds = new Set<string>();
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.eventId) {
-            assignedIds.add(data.eventId);
+      const publishEvents = () => {
+        const visible = new Map<string, Event>();
+        [...publicEvents, ...assignedEvents].forEach((event) => {
+          if (event.id && event.templeId === profile.templeId && !event.isDeleted) {
+            visible.set(event.id, event);
           }
         });
-        latestAssignedEventIds = assignedIds;
-        updateFilteredEvents();
+        setEvents(Array.from(visible.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      };
+
+      unsubscribeE = onSnapshot(
+        query(
+          collection(db, 'events'),
+          where('templeId', '==', profile.templeId),
+          where('isDeleted', '==', false),
+          where('isPublic', '==', true)
+        ),
+        (snapshot) => {
+          publicEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
+          publishEvents();
+        }
+      );
+
+      const qAssignments = query(collectionGroup(db, 'assignments'), where('userId', '==', profile.uid));
+
+      unsubscribeA = onSnapshot(qAssignments, async (snapshot) => {
+        const assignedIds = Array.from(new Set(
+          snapshot.docs
+            .map(doc => doc.data().eventId as string | undefined)
+            .filter((eventId): eventId is string => !!eventId)
+        ));
+
+        const fetchedEvents = await Promise.all(
+          assignedIds.map(async (eventId) => {
+            const eventSnap = await getDoc(doc(db, 'events', eventId));
+            return eventSnap.exists() ? ({ id: eventSnap.id, ...eventSnap.data() } as Event) : null;
+          })
+        );
+
+        if (!isMounted) return;
+        assignedEvents = fetchedEvents.filter((event): event is Event => !!event && event.templeId === profile.templeId && !event.isDeleted);
+        publishEvents();
       }, (err) => {
         console.error("Error fetching user assignments in dashboard:", err);
       });
+
+      const originalUnsubE = unsubscribeE;
+      const originalUnsubA = unsubscribeA;
+      unsubscribeE = () => {
+        isMounted = false;
+        originalUnsubE();
+      };
+      unsubscribeA = () => {
+        isMounted = false;
+        originalUnsubA();
+      };
     }
 
     let unsubscribeD = () => {};
