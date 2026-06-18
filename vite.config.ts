@@ -12,13 +12,12 @@ export default defineConfig(({mode}) => {
   // We can dynamically get it from github actions, or you can manually hardcode it.
   // REPLACE 'Vrinda-app' with your actual repository name if it differs and you build locally
   const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1];
-  // On Railway, GITHUB_REPOSITORY is NOT set, so base will always be '/'
-  // Only use repo subpath when explicitly deploying to GitHub Pages via Actions
-  const isGitHubPages = process.env.DEPLOY_TARGET === 'github-pages';
+  // When GitHub repo metadata is available, use the repo subpath for Pages.
+  // Local dev and Railway builds still fall back to '/' because the variable is absent.
 
   return {
-    // Use repo subpath only for GitHub Pages; always use root on Railway & local dev.
-    base: isGitHubPages && repoName ? `/${repoName}/` : '/',
+    // Use repo subpath on GitHub-hosted builds; always use root on Railway & local dev.
+    base: repoName ? `/${repoName}/` : '/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
