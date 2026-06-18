@@ -111,8 +111,18 @@ function createGoogleAuthProvider(): GoogleAuthProvider {
   return provider;
 }
 
+function shouldUseRedirectForGoogleAuth(): boolean {
+  const host = window.location.hostname;
+  return host.endsWith('.github.io');
+}
+
 export async function signInWithGoogle(): Promise<User> {
   const provider = createGoogleAuthProvider();
+  if (shouldUseRedirectForGoogleAuth()) {
+    await signInWithRedirect(auth, provider);
+    throw new Error('REDIRECT_IN_PROGRESS');
+  }
+
   try {
     const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     return result.user;
