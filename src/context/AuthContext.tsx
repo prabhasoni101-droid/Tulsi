@@ -98,6 +98,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   ...newProfile,
                   isDeleted: false,
                 });
+                // ← Profile now exists in Firestore, onSnapshot will fire again
+                // Set profile immediately to prevent race condition
                 setProfile(newProfile);
                 setLoading(false);
               } catch (error) {
@@ -106,6 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setProfileError('Could not initialize owner portal. Please check Firestore permissions.');
                 setLoading(false);
               }
+              // ← DO NOT return - let onSnapshot re-fire to load complete profile from Firestore
               return;
             }
             const newProfile: UserProfile = {

@@ -49,13 +49,14 @@ const Login = () => {
     try {
       sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
       await signInWithGoogle();
-      navigate('/');
+      // ← DO NOT navigate here! 
+      // Let onAuthStateChanged fire and load profile,
+      // then the component will auto-redirect via line 44
     } catch (err) {
       const message = getAuthErrorMessage(err);
       if (message !== 'REDIRECT_IN_PROGRESS') {
         setError(message);
       }
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -67,10 +68,10 @@ const Login = () => {
     try {
       sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
       await loginOwnerWithTestCredentials();
-      navigate('/');
+      // ← DO NOT navigate here! 
+      // Let onAuthStateChanged fire and load profile
     } catch (err) {
       setError(getAuthErrorMessage(err));
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -82,10 +83,10 @@ const Login = () => {
     try {
       sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, mode);
       await loginWithEmailOrUserId(userId, password);
-      navigate('/');
+      // ← DO NOT navigate here! 
+      // Let onAuthStateChanged fire and load profile
     } catch (err) {
       setError(getAuthErrorMessage(err));
-    } finally {
       setIsSubmitting(false);
     }
   };
