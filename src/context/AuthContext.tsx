@@ -84,6 +84,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               (expectedMode === 'owner' ||
                 (!!ownerEmail && firebaseUser.email?.toLowerCase() === ownerEmail));
 
+            console.log('[AUTH DEBUG] Profile creation:', {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              providerData: firebaseUser.providerData.map((p) => p.providerId),
+              isGoogleSignIn,
+              expectedMode,
+              isOwnerBootstrap,
+              ownerEmail,
+            });
+
             if (isOwnerBootstrap) {
               sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
               const newProfile: UserProfile = {
@@ -94,18 +104,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 templeId: firebaseUser.uid,
               };
               try {
+                console.log('[AUTH DEBUG] Creating OWNER profile:', newProfile);
                 await setDoc(profileRef, {
                   ...newProfile,
                   isDeleted: false,
                 });
+                console.log('[AUTH DEBUG] OWNER profile created successfully');
                 // ← Profile now exists in Firestore, onSnapshot will fire again
                 // Set profile immediately to prevent race condition
                 setProfile(newProfile);
                 setLoading(false);
               } catch (error) {
-                console.error('Owner profile bootstrap failed:', error);
+                console.error('[AUTH ERROR] Owner profile bootstrap failed:', error);
                 setProfile(null);
-                setProfileError('Could not initialize owner portal. Please check Firestore permissions.');
+                setProfileError(`Auth failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 setLoading(false);
               }
               // ← DO NOT return - let onSnapshot re-fire to load complete profile from Firestore
@@ -119,14 +131,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              templeId: firebaseUser.uid,
             };
 
+            console.log('[AUTH DEBUG] Creating USER profile (not owner):', newProfile);
+
             try {
               await setDoc(profileRef, { ...newProfile, isDeleted: false });
+              console.log('[AUTH DEBUG] USER profile created successfully');
               setProfile(newProfile);
               setLoading(false);
             } catch (error) {
-              console.error('User profile creation failed:', error);
+              console.error('[AUTH ERROR] User profile creation failed:', error);
               setProfile(null);
-              setProfileError('Could not create user profile. Please check Firestore permissions or try again.');
+              setProfileError(`Auth failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
               setLoading(false);
             }
             return;
