@@ -98,6 +98,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   ...newProfile,
                   isDeleted: false,
                 });
+                setProfile(newProfile);
+                setLoading(false);
               } catch (error) {
                 console.error('Owner profile bootstrap failed:', error);
                 setProfile(null);
@@ -114,9 +116,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              templeId: firebaseUser.uid,
             };
 
-            await setDoc(profileRef, { ...newProfile, isDeleted: false });
-            setProfile(newProfile);
-            setLoading(false);
+            try {
+              await setDoc(profileRef, { ...newProfile, isDeleted: false });
+              setProfile(newProfile);
+              setLoading(false);
+            } catch (error) {
+              console.error('User profile creation failed:', error);
+              setProfile(null);
+              setProfileError('Could not create user profile. Please check Firestore permissions or try again.');
+              setLoading(false);
+            }
             return;
             }
 
@@ -148,11 +157,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           if (needsUpdate) {
-            await setDoc(
-              profileRef,
-              { role: roleToSet, templeId: templeIdToSet, isDeleted: false },
-              { merge: true }
-            );
+            try {
+              await setDoc(
+                profileRef,
+                { role: roleToSet, templeId: templeIdToSet, isDeleted: false },
+                { merge: true }
+              );
+              setLoading(false);
+            } catch (error) {
+              console.error('Profile update failed:', error);
+              setProfile(null);
+              setProfileError('Could not update profile. Please check Firestore permissions or try again.');
+              setLoading(false);
+            }
             return;
           }
 
