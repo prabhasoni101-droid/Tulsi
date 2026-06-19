@@ -106,15 +106,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
               return;
             }
-            setProfile(null);
-            setProfileError('No profile found for this account. Contact your temple administrator.');
-            if (navigator.onLine) {
-              await auth.signOut();
-              setUser(null);
-            }
+            const newProfile: UserProfile = {
+             uid: firebaseUser.uid,
+             displayName: firebaseUser.displayName || firebaseUser.email || 'User',
+             email: firebaseUser.email || '',
+             role: 'USER',
+             templeId: firebaseUser.uid,
+            };
+
+            await setDoc(profileRef, { ...newProfile, isDeleted: false });
+            setProfile(newProfile);
             setLoading(false);
             return;
-          }
+            }
 
           const data = profileSnap.data();
 
