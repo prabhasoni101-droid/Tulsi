@@ -163,20 +163,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             templeId: templeIdToSet,
           } as UserProfile;
 
-          const expectedMode = sessionStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
-          if (expectedMode) {
-            sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
-            if (!roleMatchesLoginMode(fullProfile.role, expectedMode)) {
-              setProfile(null);
-              setProfileError(
-                `This account is registered as ${fullProfile.role}. Please use the correct login tab.`
-              );
-              await auth.signOut();
-              setUser(null);
-              setLoading(false);
-              return;
-            }
-          }
+          // Clear any pending login mode, but allow the user to proceed
+          // Role validation happens at route protection level (ProtectedRoute)
+          sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
 
           setProfile(fullProfile);
           setLoading(false);
