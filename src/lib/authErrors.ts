@@ -18,7 +18,7 @@ export function getAuthErrorMessage(error: unknown): string {
     return 'This website URL is not authorized in Firebase. Add "localhost" under Authentication > Settings > Authorized domains.';
   }
   if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
-    return 'Google sign-in popup was blocked. Allow popups for localhost in your browser, then click Sign in with Google again.';
+    return 'Popup blocked by your browser! Please allow popups for this website in your browser settings, then tap "Sign in with Google" again.';
   }
   if (code === 'auth/invalid-api-key' || lower.includes('api key')) {
     return 'Firebase API key is missing or invalid. Copy firebase-applet-config.json values into your local .env file.';

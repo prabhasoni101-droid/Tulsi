@@ -131,7 +131,8 @@ export async function signInWithGoogle(): Promise<User> {
     const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     return result.user;
   } catch (error) {
-    if (!isLocalDevHost() && shouldUseGoogleRedirect(error)) {
+    const isGitHubPages = window.location.hostname.endsWith('.github.io');
+    if (!isLocalDevHost() && !isGitHubPages && shouldUseGoogleRedirect(error)) {
       await signInWithRedirect(auth, provider);
       throw new Error('REDIRECT_IN_PROGRESS');
     }
