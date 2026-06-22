@@ -79,10 +79,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!profileSnap.exists()) {
             const isGoogleSignIn = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
             const expectedMode = sessionStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
+            // isOwnerBootstrap is true if:
+            // 1. User signed in with Google AND
+            // 2. Either: the login mode was explicitly set to 'owner' (most common case)
+            //    OR: the ownerEmail env var matches (fallback for hardcoded single-owner apps)
+            const emailMatchesOwner = !!ownerEmail && firebaseUser.email?.toLowerCase() === ownerEmail;
             const isOwnerBootstrap =
               isGoogleSignIn &&
-              (expectedMode === 'owner' ||
-                (!!ownerEmail && firebaseUser.email?.toLowerCase() === ownerEmail));
+              (expectedMode === 'owner' || emailMatchesOwner);
 
             console.log('[AUTH DEBUG] Profile creation:', {
               uid: firebaseUser.uid,
@@ -120,7 +124,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setProfileError(`Auth failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 setLoading(false);
               }
-              // ← DO NOT return - let onSnapshot re-fire to load complete profile from Firestore
+              // Set profile immediately — onSnapshot will re-fire but that's OK
+              // because the document now exists and will be loaded correctly
               return;
             }
             const newProfile: UserProfile = {
