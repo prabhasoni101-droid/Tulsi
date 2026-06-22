@@ -112,8 +112,12 @@ function createGoogleAuthProvider(): GoogleAuthProvider {
 }
 
 function shouldUseRedirectForGoogleAuth(): boolean {
-  const host = window.location.hostname;
-  return host.endsWith('.github.io');
+  // BUGFIX: Never force redirect on GitHub Pages.
+  // getRedirectResult() silently returns null on .github.io because the
+  // redirect state in IndexedDB is lost when hosting domain differs from
+  // authDomain. Popup avoids this entirely. If popup is blocked by browser,
+  // the catch block in signInWithGoogle() auto-falls back to redirect.
+  return false;
 }
 
 export async function signInWithGoogle(): Promise<User> {
