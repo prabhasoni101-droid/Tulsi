@@ -82,7 +82,7 @@ assertFirebaseConfig();
 
 const app = initializeApp(resolvedFirebaseConfig);
 
-const firestoreSettings: Record<string, unknown> = { experimentalForceLongPolling: true };
+const firestoreSettings: Record<string, unknown> = { };
 try {
   firestoreSettings.localCache = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
 } catch (e) {

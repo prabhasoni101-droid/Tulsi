@@ -127,22 +127,22 @@ export default function App() {
 
     // If we are returning from a Google redirect, the URL will briefly contain
     // the auth callback params. Also check if flag was already set before redirect.
-    const alreadyPending = sessionStorage.getItem('expectedLoginRole') === 'owner';
+    const alreadyPending = localStorage.getItem('expectedLoginRole') === 'owner';
     const looksLikeRedirectReturn =
-      window.location.hash.includes('__firebase_request_key') ||
-      window.location.search.includes('code=') ||
+      window.location.search.includes('__firebase_request_key') ||
+      window.location.hash.includes('__firebase_request_key')
       alreadyPending;
 
     if (looksLikeRedirectReturn) {
       // Pre-set the flag synchronously so AuthContext sees it when it mounts
-      sessionStorage.setItem('expectedLoginRole', 'owner');
+      localStorage.setItem('expectedLoginRole', 'owner');
     }
 
     completeGoogleRedirectSignIn()
       .then((user) => {
         if (user) {
           // Redirect definitely completed — ensure flag is set
-          sessionStorage.setItem('expectedLoginRole', 'owner');
+          localStorage.setItem('expectedLoginRole', 'owner');
           console.log('[APP] Google redirect sign-in completed for:', user.email);
         }
       })

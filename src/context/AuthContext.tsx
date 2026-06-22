@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db, ownerEmail } from '../services/firebase';
 import { UserProfile, UserRole } from '../types';
@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    setPersistence(auth, browserLocalPersistence).catch(console.error);
+    //setPersistence(auth, browserLocalPersistence).catch(console.error);
 
     let profileUnsub: (() => void) | undefined;
 
@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         async (profileSnap) => {
           if (!profileSnap.exists()) {
             const isGoogleSignIn = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
-            const expectedMode = sessionStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
+            const expectedMode = localStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
             // isOwnerBootstrap is true if:
             // 1. User signed in with Google AND
             // 2. Either: the login mode was explicitly set to 'owner' (most common case)
@@ -99,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
 
             if (isOwnerBootstrap) {
-              sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
+              localStorage.removeItem(PENDING_LOGIN_MODE_KEY);
               const newProfile: UserProfile = {
                 uid: firebaseUser.uid,
                 displayName: firebaseUser.displayName || 'Owner',
@@ -205,7 +205,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Clear any pending login mode, but allow the user to proceed
           // Role validation happens at route protection level (ProtectedRoute)
-          sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
+          localStorage.removeItem(PENDING_LOGIN_MODE_KEY);
 
           setProfile(fullProfile);
           setLoading(false);

@@ -66,7 +66,7 @@ const Login = () => {
     setError('');
     setIsSubmitting(true);
     try {
-      sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
+      localStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
       await signInWithGoogle();
       // ← DO NOT navigate here! 
       // Let onAuthStateChanged fire and load profile,
@@ -85,7 +85,7 @@ const Login = () => {
     setError('');
     setIsSubmitting(true);
     try {
-      sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
+      localStorage.setItem(PENDING_LOGIN_MODE_KEY, 'owner');
       await loginOwnerWithTestCredentials();
       // ← DO NOT navigate here! 
       // Let onAuthStateChanged fire and load profile
@@ -100,7 +100,7 @@ const Login = () => {
     setError('');
     setIsSubmitting(true);
     try {
-      sessionStorage.setItem(PENDING_LOGIN_MODE_KEY, mode);
+      localStorage.setItem(PENDING_LOGIN_MODE_KEY, mode);
       await loginWithEmailOrUserId(userId, password);
       // ← DO NOT navigate here! 
       // Let onAuthStateChanged fire and load profile
