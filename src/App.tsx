@@ -131,10 +131,13 @@ export default function App() {
         sessionStorage.setItem('expectedLoginRole', 'owner');
       }
 
-      const user = await completeGoogleRedirectSignIn();
-      if (user) {
-        sessionStorage.setItem('expectedLoginRole', 'owner');
-        console.log('[APP] Google redirect sign-in completed for:', user.email);
+      const isGitHubPages = window.location.hostname.endsWith('.github.io');
+      if (!isGitHubPages) {
+        const user = await completeGoogleRedirectSignIn();
+        if (user) {
+          sessionStorage.setItem('expectedLoginRole', 'owner');
+          console.log('[APP] Google redirect sign-in completed for:', user.email);
+        }
       }
     } catch (error) {
       console.error('Redirect sign-in check failed:', error);
