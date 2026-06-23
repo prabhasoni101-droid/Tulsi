@@ -99,25 +99,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
 
             if (isOwnerBootstrap) {
-            const newProfile: UserProfile = {
-             uid: firebaseUser.uid,
-             displayName: firebaseUser.displayName || 'Owner',
-             email: firebaseUser.email || '',
-             role: 'OWNER',
-             templeId: firebaseUser.uid,
-            };
-            try {
-             await setDoc(profileRef, {
-                ...newProfile,
-                isDeleted: false,
-              });
-
-              sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
-              setProfile(newProfile);
-              setLoading(false);
+              const newProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                displayName: firebaseUser.displayName || 'Owner',
+                email: firebaseUser.email || '',
+                role: 'OWNER',
+                templeId: firebaseUser.uid,
+              };
+              try {
+                sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
+                await setDoc(profileRef, { ...newProfile, isDeleted: false });
                 console.log('[AUTH DEBUG] OWNER profile created successfully');
-                // ← Profile now exists in Firestore, onSnapshot will fire again
-                // Set profile immediately to prevent race condition
                 setProfile(newProfile);
                 setLoading(false);
               } catch (error) {
@@ -126,8 +118,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setProfileError(`Auth failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 setLoading(false);
               }
-              // Set profile immediately — onSnapshot will re-fire but that's OK
-              // because the document now exists and will be loaded correctly
               return;
             }
             const newProfile: UserProfile = {

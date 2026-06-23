@@ -123,17 +123,13 @@ function shouldUseRedirectForGoogleAuth(): boolean {
 }
 
 export async function signInWithGoogle(): Promise<User> {
-  await authPersistenceReady;
-
+  // NO await before signInWithPopup — mobile browsers require
+  // signInWithPopup to be called directly in the user gesture stack.
+  // Any await (even on a resolved promise) can break the popup on mobile.
   const provider = createGoogleAuthProvider();
-  try {
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
-  } catch (error) {
-    throw error;
-  }
+  const result = await signInWithPopup(auth, provider);
+  return result.user;
 }
-
 export async function completeGoogleRedirectSignIn(): Promise<User | null> {
   const result = await getRedirectResult(auth);
   return result?.user ?? null;

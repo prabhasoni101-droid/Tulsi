@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { completeGoogleRedirectSignIn } from './services/firebase';
+import { completeGoogleRedirectSignIn, authPersistenceReady } from './services/firebase';
 import { roleMeetsMinimum } from './lib/authRoles';
 import type { UserRole } from './types';
 import { AnimatePresence } from 'motion/react';
