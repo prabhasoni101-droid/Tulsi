@@ -9,7 +9,7 @@ import {
   createUserWithEmailAndPassword,
   setPersistence,
   browserLocalPersistence,
-  browserPopupRedirectResolver,
+  //browserPopupRedirectResolver,
   inMemoryPersistence,
   type User,
 } from 'firebase/auth';
@@ -128,7 +128,7 @@ export async function signInWithGoogle(): Promise<User> {
   }
 
   try {
-    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    const result = await signInWithPopup(auth, provider);
     return result.user;
   } catch (error) {
     const isGitHubPages = window.location.hostname.endsWith('.github.io');
