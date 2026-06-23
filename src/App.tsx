@@ -129,9 +129,9 @@ export default function App() {
     // the auth callback params. Also check if flag was already set before redirect.
     const alreadyPending = localStorage.getItem('expectedLoginRole') === 'owner';
     const looksLikeRedirectReturn =
-     window.location.search.includes('__firebase_request_key') ||
-     window.location.hash.includes('__firebase_request_key') ||
-     alreadyPending;
+      window.location.search.includes('__firebase_request_key') ||
+      window.location.hash.includes('__firebase_request_key') ||
+      alreadyPending;
 
     if (looksLikeRedirectReturn) {
       // Pre-set the flag synchronously so AuthContext sees it when it mounts
