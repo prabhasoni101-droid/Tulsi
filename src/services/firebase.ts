@@ -93,7 +93,9 @@ export const db = initializeFirestore(app, firestoreSettings, resolvedFirebaseCo
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 auth.useDeviceLanguage();
-setPersistence(auth, browserLocalPersistence);
+export const authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.error('[AUTH] persistence setup failed:', error);
+});
 
 export const ownerEmail = (import.meta.env.VITE_OWNER_EMAIL as string | undefined)?.trim().toLowerCase() || '';
 
@@ -121,21 +123,13 @@ function shouldUseRedirectForGoogleAuth(): boolean {
 }
 
 export async function signInWithGoogle(): Promise<User> {
-  const provider = createGoogleAuthProvider();
-  if (shouldUseRedirectForGoogleAuth()) {
-    await signInWithRedirect(auth, provider);
-    throw new Error('REDIRECT_IN_PROGRESS');
-  }
+  await authPersistenceReady;
 
+  const provider = createGoogleAuthProvider();
   try {
     const result = await signInWithPopup(auth, provider);
     return result.user;
   } catch (error) {
-    //const isGitHubPages = window.location.hostname.endsWith('.github.io');
-     if (!isLocalDevHost() && shouldUseGoogleRedirect(error)) {
-      await signInWithRedirect(auth, provider);
-      throw new Error('REDIRECT_IN_PROGRESS');
-    }
     throw error;
   }
 }

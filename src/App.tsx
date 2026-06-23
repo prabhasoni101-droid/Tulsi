@@ -115,40 +115,38 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // CRITICAL FIX: Set expectedLoginRole in sessionStorage BEFORE AuthProvider mounts.
-    // When coming back from a Google redirect, the user is already authenticated but
-    // AuthContext needs to know this is an 'owner' login attempt to create the OWNER
-    // profile instead of a USER profile.
-    //
-    // BUG FIX: We now set 'owner' in sessionStorage IMMEDIATELY if any pending
-    // redirect is detected (via URL hash or existing sessionStorage value),
-    // BEFORE awaiting the async getRedirectResult. This prevents the race condition
-    // where onAuthStateChanged fires inside AuthProvider before we set the flag.
+  let cancelled = false;
 
-    // If we are returning from a Google redirect, the URL will briefly contain
-    // the auth callback params. Also check if flag was already set before redirect.
-    const alreadyPending = localStorage.getItem('expectedLoginRole') === 'owner';
-    const looksLikeRedirectReturn =
-      window.location.search.includes('__firebase_request_key') ||
-      window.location.hash.includes('__firebase_request_key') ||
-      alreadyPending;
+  (async () => {
+    try {
+      await authPersistenceReady;
 
-    if (looksLikeRedirectReturn) {
-      // Pre-set the flag synchronously so AuthContext sees it when it mounts
-      localStorage.setItem('expectedLoginRole', 'owner');
+      const alreadyPending = sessionStorage.getItem('expectedLoginRole') === 'owner';
+      const looksLikeRedirectReturn =
+        window.location.search.includes('__firebase_request_key') ||
+        window.location.hash.includes('__firebase_request_key') ||
+        alreadyPending;
+
+      if (looksLikeRedirectReturn) {
+        sessionStorage.setItem('expectedLoginRole', 'owner');
+      }
+
+      const user = await completeGoogleRedirectSignIn();
+      if (user) {
+        sessionStorage.setItem('expectedLoginRole', 'owner');
+        console.log('[APP] Google redirect sign-in completed for:', user.email);
+      }
+    } catch (error) {
+      console.error('Redirect sign-in check failed:', error);
+    } finally {
+      if (!cancelled) setAuthReady(true);
     }
+  })();
 
-    completeGoogleRedirectSignIn()
-      .then((user) => {
-        if (user) {
-          // Redirect definitely completed — ensure flag is set
-          localStorage.setItem('expectedLoginRole', 'owner');
-          console.log('[APP] Google redirect sign-in completed for:', user.email);
-        }
-      })
-      .catch((error) => console.error('Redirect sign-in check failed:', error))
-      .finally(() => setAuthReady(true));
-  }, []);
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   if (!authReady) return <AuthLoadingScreen />;
 

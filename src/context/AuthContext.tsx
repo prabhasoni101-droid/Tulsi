@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         async (profileSnap) => {
           if (!profileSnap.exists()) {
             const isGoogleSignIn = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
-            const expectedMode = localStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
+            const expectedMode = sessionStorage.getItem(PENDING_LOGIN_MODE_KEY) as LoginMode | null;
             // isOwnerBootstrap is true if:
             // 1. User signed in with Google AND
             // 2. Either: the login mode was explicitly set to 'owner' (most common case)
@@ -99,20 +99,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
 
             if (isOwnerBootstrap) {
-              localStorage.removeItem(PENDING_LOGIN_MODE_KEY);
-              const newProfile: UserProfile = {
-                uid: firebaseUser.uid,
-                displayName: firebaseUser.displayName || 'Owner',
-                email: firebaseUser.email || '',
-                role: 'OWNER',
-                templeId: firebaseUser.uid,
-              };
-              try {
-                console.log('[AUTH DEBUG] Creating OWNER profile:', newProfile);
-                await setDoc(profileRef, {
-                  ...newProfile,
-                  isDeleted: false,
-                });
+            const newProfile: UserProfile = {
+             uid: firebaseUser.uid,
+             displayName: firebaseUser.displayName || 'Owner',
+             email: firebaseUser.email || '',
+             role: 'OWNER',
+             templeId: firebaseUser.uid,
+            };
+            try {
+             await setDoc(profileRef, {
+                ...newProfile,
+                isDeleted: false,
+              });
+
+              sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
+              setProfile(newProfile);
+              setLoading(false);
                 console.log('[AUTH DEBUG] OWNER profile created successfully');
                 // ← Profile now exists in Firestore, onSnapshot will fire again
                 // Set profile immediately to prevent race condition
@@ -205,7 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Clear any pending login mode, but allow the user to proceed
           // Role validation happens at route protection level (ProtectedRoute)
-          localStorage.removeItem(PENDING_LOGIN_MODE_KEY);
+          sessionStorage.removeItem(PENDING_LOGIN_MODE_KEY);
 
           setProfile(fullProfile);
           setLoading(false);
