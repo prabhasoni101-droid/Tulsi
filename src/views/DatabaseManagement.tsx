@@ -152,8 +152,8 @@ const EditableCell = React.memo<{
   return (
     <div 
       className={cn(
-        "px-6 py-4 cursor-pointer transition-colors select-none min-h-[56px] flex items-center", 
-        isSelected ? "bg-orange-100/80 ring-2 ring-inset ring-orange-500/30" : "hover:bg-stone-50"
+        "px-6 py-4 cursor-pointer select-none min-h-[56px] flex items-center", 
+        isSelected ? "bg-orange-100 ring-2 ring-inset ring-orange-400" : "hover:bg-stone-50"
       )}
       onMouseDown={(e) => {
         if (e.button === 0) {
@@ -248,7 +248,7 @@ const MemoizedTableRow = React.memo((props: any) => {
         "px-4 py-3 w-16 text-center border-r text-xs font-black select-none cursor-grab transition-colors",
         rowDragConfig?.active && isRowDragSource ? "cursor-grabbing bg-blue-50" : "cursor-grab hover:bg-stone-50",
         d.duplicateType ? "border-white/20 text-white/80" : "border-stone-50 text-stone-300",
-        isCellSelected(rIndex, -1) && "bg-stone-200"
+        isCellSelected(rIndex, -1) && "bg-orange-100"
       )}
       onMouseDown={(e) => {
         if (rowRef.current) rowRef.current.draggable = true;
@@ -639,7 +639,7 @@ const DatabaseManagement: React.FC = () => {
       if (mouseDownPosRef.current && !isDraggingRef.current && !isDraggingCellRef.current && !rowDragConfig?.active) {
         const dx = e.clientX - mouseDownPosRef.current.x;
         const dy = e.clientY - mouseDownPosRef.current.y;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
           if (!rowDragConfig?.active && isSelectingPending) {
             isDraggingCellRef.current = true;
           }
@@ -663,6 +663,7 @@ const DatabaseManagement: React.FC = () => {
     };
     
     if (isDragging || rowDragConfig?.active || isSelectingPending) {
+      document.body.style.userSelect = 'none';
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('dragover', handleMouseMove as any);
       
@@ -710,6 +711,7 @@ const DatabaseManagement: React.FC = () => {
     }
 
     return () => {
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('dragover', handleMouseMove as any);
       if (scrollIntervalRef.current) {

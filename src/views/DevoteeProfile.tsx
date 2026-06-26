@@ -67,10 +67,7 @@ export default function DevoteeProfile() {
   const canAccessProfile =
     isOwner ||
     isMentor ||
-    !!(devotee && profile && devotee.templeId === profile.templeId && (
-      devotee.facilitatorId === profile.uid ||
-      (profile.contact && devotee.contact === profile.contact)
-    ));
+    !!(devotee && profile && devotee.templeId === profile.templeId);
   const canEdit = canFullEdit;
 
   useEffect(() => {
@@ -608,29 +605,29 @@ export default function DevoteeProfile() {
 
                   {(isOwner || isMentor) && (
                     <div className="group/field">
-                      <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] mb-4 block">Facilitator Assigned</label>
-                      {isEditing && canFullEdit ? (
-                        <select 
-                          value={editForm.facilitatorId || ''} 
-                          onChange={e => {
-                            const selectedUser = templeUsers.find(u => u.uid === e.target.value);
-                            setEditForm({
-                              ...editForm, 
-                              facilitatorId: e.target.value,
-                              facilitatorName: selectedUser?.displayName || selectedUser?.email || ''
-                            });
-                          }}
-                          className="w-full bg-stone-50 px-6 py-4 rounded-xl border border-stone-100 text-sm font-bold text-stone-700 outline-none focus:border-orange-200 transition-all font-serif italic"
-                        >
-                          <option value="">No Facilitator</option>
-                          {templeUsers.map(u => (
-                            <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <p className="text-stone-800 font-serif font-black text-2xl italic tracking-tight">{devotee.facilitatorName || templeUsers.find(u => u.uid === devotee.facilitatorId)?.displayName || devotee.facilitator || 'Independent'}</p>
-                      )}
-                    </div>
+                    <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] mb-4 block">Facilitator Assigned</label>
+                    {isEditing && canFullEdit ? (
+                      <select 
+                        value={editForm.facilitatorId || ''} 
+                        onChange={e => {
+                          const selectedUser = templeUsers.find(u => u.uid === e.target.value);
+                          setEditForm({
+                            ...editForm, 
+                            facilitatorId: e.target.value,
+                            facilitatorName: selectedUser?.displayName || selectedUser?.email || ''
+                          });
+                        }}
+                        className="w-full bg-stone-50 px-6 py-4 rounded-xl border border-stone-100 text-sm font-bold text-stone-700 outline-none focus:border-orange-200 transition-all font-serif italic"
+                      >
+                        <option value="">No Facilitator</option>
+                        {templeUsers.map(u => (
+                          <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-stone-800 font-serif font-black text-2xl italic tracking-tight">{devotee.facilitatorName || templeUsers.find(u => u.uid === devotee.facilitatorId)?.displayName || devotee.facilitator || 'Independent'}</p>
+                    )}
+                  </div>
                   )}
 
                   <div className="group/field">

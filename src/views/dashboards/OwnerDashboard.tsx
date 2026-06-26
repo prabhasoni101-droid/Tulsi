@@ -45,7 +45,7 @@ const OwnerDashboard = () => {
   const [registrationMode, setRegistrationMode] = useState<'USER' | 'MENTOR'>('USER');
   const [regForm, setRegForm] = useState({ name: '', contact: '' });
   const [generatedCreds, setGeneratedCreds] = useState<{ id: string, pass: string } | null>(null);
-  
+  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
   const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '', mediaUrl: '' });
   const [templates, setTemplates] = useState<any[]>([]);
   const [creationStep, setCreationStep] = useState(1);
@@ -152,6 +152,7 @@ const OwnerDashboard = () => {
         role: registrationMode,
         email: userCred.user.email,
         username: uniqueId,
+        password: password, // Store hashed password in production
         templeId: profile?.templeId || profile?.uid,
         isDeleted: false,
         createdAt: serverTimestamp()
@@ -438,9 +439,27 @@ const OwnerDashboard = () => {
                          <span className="text-[9px] font-black text-stone-300 uppercase tracking-widest">ID</span>
                          <span className="text-sm font-mono font-bold text-stone-700 select-all tracking-tight">{(u as any).username || 'N/A'}</span>
                        </div>
-                       <p className="text-[10px] text-stone-400 text-center italic px-1">
-                         Password shown once at registration only.
-                       </p>
+                       {(u as any).password ? (
+                         <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-stone-50 shadow-sm">
+                           <span className="text-[9px] font-black text-stone-300 uppercase tracking-widest">Pass</span>
+                           <div className="flex items-center gap-2">
+                             <span className="text-sm font-mono font-bold text-stone-700 select-all tracking-tight">
+                               {showPasswordMap[u.uid] ? (u as any).password : '••••••••'}
+                             </span>
+                             <button
+                               onClick={() => setShowPasswordMap(prev => ({ ...prev, [u.uid]: !prev[u.uid] }))}
+                               className="text-stone-400 hover:text-orange-500 transition-colors p-1 rounded-lg hover:bg-orange-50"
+                               title={showPasswordMap[u.uid] ? 'Hide password' : 'Show password'}
+                             >
+                               {showPasswordMap[u.uid] ? <EyeOff size={14} /> : <Eye size={14} />}
+                             </button>
+                           </div>
+                         </div>
+                       ) : (
+                         <p className="text-[10px] text-stone-400 text-center italic px-1">
+                           Password not stored for this account.
+                         </p>
+                       )}
                      </div>
                      {!(u as any).username && (
                         <p className="text-[9px] text-orange-400 mt-3 italic text-center font-bold px-1 uppercase tracking-widest">External Provider Access</p>

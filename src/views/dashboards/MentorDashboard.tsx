@@ -77,7 +77,7 @@ const MentorDashboard = () => {
     const unsubscribeU = onSnapshot(collection(db, 'users'), async (snapshot) => {
       const usersData = snapshot.docs
         .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
-        .filter(u => u.templeId === profile.templeId && !u.isDeleted);
+         .filter(u => u.templeId === profile.templeId && !u.isDeleted && u.role !== 'OWNER');
       
       const updatedUsers = await Promise.all(usersData.map(async (u) => {
         const qA = query(collectionGroup(db, 'assignments'), where('userId', '==', u.uid));
