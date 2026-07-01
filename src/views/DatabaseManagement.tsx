@@ -18,7 +18,7 @@ import { db } from '../services/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Devotee, Event } from '../types';
 import Layout from '../components/Layout';
-import { cn, normalizePhoneNumber } from '../lib/utils';
+import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../lib/utils';
 import Papa from 'papaparse';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -128,9 +128,12 @@ const EditableCell = React.memo<{
     return (
       <input 
         autoFocus
+        type={field === 'Contact No.' ? 'tel' : 'text'}
+        inputMode={field === 'Contact No.' ? 'numeric' : undefined}
+        maxLength={field === 'Contact No.' ? 10 : undefined}
         className="w-full h-full px-6 py-4 border-2 border-orange-500 outline-none font-black text-stone-700 bg-white"
         value={value}
-        onChange={e => setValue(e.target.value)}
+        onChange={e => setValue(field === 'Contact No.' ? sanitizeMobileInput(e.target.value) : e.target.value)}
         onMouseDown={e => e.stopPropagation()}
         onBlur={() => {
            if (value !== initialValue) {
@@ -279,6 +282,35 @@ const MemoizedTableRow = React.memo((props: any) => {
         </div>
       </td>
       {allColumns.map((col: string, cIndex: number) => {
+        if (col === 'Mentor') {
+          const mentorVal = d.mentor || (d as any).Mentor || '';
+          const authorizedMentors = templeUsers.filter((u: any) => u.role === 'MENTOR');
+          return (
+            <td 
+              key={col} 
+              data-row-idx={rIndex}
+              data-col-idx={cIndex}
+              className={cn("px-6 py-3 border-r border-stone-50", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              onMouseDown={() => handleMouseDown(rIndex, cIndex)}
+              onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
+              onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
+            >
+               <select 
+                 value={mentorVal} 
+                 onChange={(e) => handleCellSave(d.id!, 'Mentor', e.target.value)} 
+                 onMouseDown={e => e.stopPropagation()}
+                 onPointerDown={e => e.stopPropagation()}
+                 className="w-full bg-transparent border border-stone-100 px-4 py-2 rounded-xl text-xs font-bold text-stone-600 outline-none cursor-pointer hover:border-orange-200 transition-all tracking-tight"
+               >
+                 <option value="">Add Mentor...</option>
+                 {mentorVal && !authorizedMentors.find((u: any) => (u.displayName || u.email) === mentorVal) && (
+                   <option value={mentorVal}>{mentorVal} (Unknown/Deleted)</option>
+                 )}
+                 {authorizedMentors.map((u: any) => <option key={u.uid} value={u.displayName || u.email}>{u.displayName || u.email}</option>)}
+               </select>
+            </td>
+          );
+        }
         if (col === 'Facilitator') {
           return (
             <td 
@@ -769,6 +801,10 @@ const DatabaseManagement: React.FC = () => {
 
   const handleCellSave = useCallback(async (id: string, field: string, value: string, recordHistory = true) => {
     try {
+      if (field === 'Contact No.' && value && !isValidMobileNumber(value)) {
+        alert("Please enter a valid 10-digit mobile number.");
+        return;
+      }
       const dbField = field === 'Name' ? 'name' : field === 'Age' ? 'age' : field === 'Mentor' ? 'mentor' : field === 'Chanting' ? 'chanting' : field === 'Contact No.' ? 'contact' : field === 'Gender' ? 'gender' : field === 'Date of Birth' ? 'dob' : field === 'Address' ? 'address' : field === 'Institute' ? 'institute' : field === 'Facilitator' ? 'facilitatorName' : field;
       let finalVal = value;
       if (field === 'Contact No.') finalVal = normalizePhoneNumber(value);

@@ -33,7 +33,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { registerSevak, generateSecurePassword } from '../../services/firebase';
-import { cn, normalizePhoneNumber } from '../../lib/utils';
+import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../../lib/utils';
 import { getFirestoreErrorMessage } from '../../lib/firestoreErrors';
 import { uploadEventImage } from '../../lib/storage';
 
@@ -135,6 +135,11 @@ const OwnerDashboard = () => {
   const handleRegisterSevak = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regForm.name || !regForm.contact) return;
+
+    if (!isValidMobileNumber(regForm.contact)) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
     
     setIsRegistering(true);
     try {
@@ -565,10 +570,12 @@ const OwnerDashboard = () => {
                   <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Contact Number</label>
                   <input 
                     type="tel" required
-                    placeholder="e.g. +91 98765..."
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="e.g. 9876543210"
                     className="w-full px-4 py-4 rounded-2xl border border-stone-200 bg-white focus:border-orange-500 focus:ring-4 ring-orange-50 outline-none text-sm font-medium transition-all"
                     value={regForm.contact}
-                    onChange={e => setRegForm({...regForm, contact: e.target.value})}
+                    onChange={e => setRegForm({...regForm, contact: sanitizeMobileInput(e.target.value)})}
                   />
                 </div>
 

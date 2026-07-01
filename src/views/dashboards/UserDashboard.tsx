@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { motion } from 'motion/react';
 import { Calendar, UserPlus, Phone, ChevronRight, CheckCircle2, ChevronDown, Plus, Heart, AlertTriangle, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn, normalizePhoneNumber } from '../../lib/utils';
+import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../../lib/utils';
 import ContactLink from '../../components/ContactLink';
 
 const UserDashboard = () => {
@@ -207,6 +207,11 @@ const UserDashboard = () => {
   const handleAddDevotee = async (e: React.FormEvent, isFacilitationAdd: boolean = false) => {
     e.preventDefault();
     if (!newDevotee.name || !newDevotee.contact) return;
+
+    if (!isValidMobileNumber(newDevotee.contact)) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
 
     setIsSubmitting(true);
     setDuplicateStatus(null);
@@ -457,10 +462,12 @@ const UserDashboard = () => {
                   <input 
                     required
                     type="tel" 
+                    inputMode="numeric"
+                    maxLength={10}
                     placeholder="9876543210"
                     className="w-full bg-stone-50/50 border border-stone-200 px-6 py-5 rounded-2xl focus:border-stone-900/20 focus:bg-white outline-none transition-all font-serif font-bold text-lg text-stone-800 shadow-inner"
                     value={newDevotee.contact || ''}
-                    onChange={e => setNewDevotee({...newDevotee, contact: e.target.value})}
+                    onChange={e => setNewDevotee({...newDevotee, contact: sanitizeMobileInput(e.target.value)})}
                   />
                 </div>
                 <div className="space-y-3">
@@ -539,10 +546,12 @@ const UserDashboard = () => {
                     <input 
                       required
                       type="tel" 
+                      inputMode="numeric"
+                      maxLength={10}
                       placeholder="e.g. 9876543210"
                       className="w-full bg-stone-50 border border-stone-200 px-5 py-4 rounded-2xl focus:border-saffron outline-none transition-all font-medium"
                       value={newDevotee.contact || ''}
-                      onChange={e => setNewDevotee({...newDevotee, contact: e.target.value})}
+                      onChange={e => setNewDevotee({...newDevotee, contact: sanitizeMobileInput(e.target.value)})}
                     />
                   </div>
                   <div className="space-y-2">

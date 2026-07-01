@@ -34,7 +34,7 @@ import {
   Trash2,
   Search
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, sanitizeMobileInput, isValidMobileNumber } from '../lib/utils';
 import ContactLink from '../components/ContactLink';
 import { useAuth } from '../context/AuthContext';
 
@@ -136,6 +136,12 @@ export default function DevoteeProfile() {
 
   const handleSave = async () => {
     if (!id || !editForm) return;
+
+    if (editForm.contact !== undefined && !isValidMobileNumber(editForm.contact)) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+
     try {
       const updateData: any = {
         ...editForm,
@@ -383,9 +389,11 @@ export default function DevoteeProfile() {
                          <Phone size={22} className="text-stone-300 group-focus-within:text-orange-500 transition-colors" />
                          {canFullEdit ? (
                            <input 
-                             type="text" 
+                             type="tel" 
+                             inputMode="numeric"
+                             maxLength={10}
                              value={editForm.contact} 
-                             onChange={e => setEditForm({...editForm, contact: e.target.value})}
+                             onChange={e => setEditForm({...editForm, contact: sanitizeMobileInput(e.target.value)})}
                              className="bg-transparent outline-none text-stone-700 font-bold w-full text-base"
                            />
                          ) : (

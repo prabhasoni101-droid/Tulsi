@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { SearchInput } from '../../components/SearchInput';
 import { Users, Phone, FileText, Plus, UserPlus, X, Loader2, Filter, ChevronRight, Calendar, ArrowUpDown, AlertTriangle, MoreVertical, Heart, User, Layers } from 'lucide-react';
-import { cn, normalizePhoneNumber } from '../../lib/utils';
+import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../../lib/utils';
 import ContactLink from '../../components/ContactLink';
 
 const MentorDashboard = () => {
@@ -168,6 +168,11 @@ const MentorDashboard = () => {
   const handleAddDevotee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDevotee.name || !newDevotee.contact || !profile?.templeId) return;
+
+    if (!isValidMobileNumber(newDevotee.contact)) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
 
     setIsSubmitting(true);
     setDuplicateWarning(null);
@@ -744,10 +749,12 @@ const MentorDashboard = () => {
                     <input 
                       required
                       type="tel" 
+                      inputMode="numeric"
+                      maxLength={10}
                       placeholder="e.g. 9876543210"
                       className="w-full bg-stone-50 border border-stone-200 px-5 py-4 rounded-2xl focus:border-saffron outline-none transition-all font-medium"
                       value={newDevotee.contact}
-                      onChange={e => setNewDevotee({...newDevotee, contact: e.target.value})}
+                      onChange={e => setNewDevotee({...newDevotee, contact: sanitizeMobileInput(e.target.value)})}
                     />
                   </div>
                   <div className="space-y-2">

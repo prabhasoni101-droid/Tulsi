@@ -19,7 +19,7 @@ import {
   Printer,
   ArrowRight
 } from 'lucide-react';
-import { cn, normalizePhoneNumber } from '../lib/utils';
+import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../lib/utils';
 import { toPng } from 'html-to-image';
 
 export default function PublicAttendance() {
@@ -176,6 +176,11 @@ export default function PublicAttendance() {
     }
 
     if (submitting) return;
+
+    if (!isValidMobileNumber(form.contact)) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
     
     setSubmitting(true);
     try {
@@ -498,13 +503,15 @@ export default function PublicAttendance() {
                 <div className="relative group">
                   <input 
                     type="tel" required
-                    placeholder="+91 98765-43210"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="9876543210"
                     className={cn(
                       "w-full px-6 py-5 rounded-[1.5rem] border outline-none transition-all shadow-inner font-bold text-stone-700",
                       form.name ? "bg-emerald-50/30 border-emerald-100 text-emerald-800" : "bg-stone-50/30 border-stone-100 focus:bg-white focus:border-orange-200"
                     )}
                     value={form.contact}
-                    onChange={e => setForm({...form, contact: e.target.value})}
+                    onChange={e => setForm({...form, contact: sanitizeMobileInput(e.target.value)})}
                   />
                   {form.name && (
                     <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">

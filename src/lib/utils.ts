@@ -29,6 +29,19 @@ export function normalizePhoneNumber(phone: any): string {
   return cleaned;
 }
 
+// Strips everything except digits and caps the length at 10 — used inside
+// onChange handlers so the input box itself never accepts junk/extra digits.
+export function sanitizeMobileInput(value: string): string {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
+}
+
+// A "valid" Indian mobile number: exactly 10 digits, first digit 6-9.
+// Blocks things like 0000000000, or partial/random numbers.
+export function isValidMobileNumber(value: string): boolean {
+  const digits = String(value || '').replace(/\D/g, '');
+  return /^[6-9]\d{9}$/.test(digits);
+}
+
 export type DuplicateType = 'NONE' | 'SAME_CONTACT' | 'SAME_NAME' | 'COMPLETE';
 
 export function getDuplicateType(name1: string, contact1: string, name2: string, contact2: string): DuplicateType {
