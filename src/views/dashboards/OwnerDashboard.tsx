@@ -98,7 +98,11 @@ const OwnerDashboard = () => {
     const unsubE = onSnapshot(qE, (snapshot) => {
       const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Event));
       setEvents(all.filter(e => !e.isDeleted));
-      setDeletedEvents(all.filter(e => e.isDeleted));
+      // Events permanently removed from the History tab are marked isArchived
+      // (see History.tsx handlePermanentDelete) rather than hard-deleted, so we
+      // must exclude them here too — otherwise they keep showing up forever in
+      // the "Import Calling List" picker even after being permanently deleted.
+      setDeletedEvents(all.filter(e => e.isDeleted && !(e as any).isArchived));
     });
 
     const qU = query(collection(db, 'users'), where('templeId', '==', templeId));

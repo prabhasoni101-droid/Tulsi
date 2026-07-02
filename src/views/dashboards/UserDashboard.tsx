@@ -124,22 +124,52 @@ const UserDashboard = () => {
 
       const qAssignments = query(collectionGroup(db, 'assignments'), where('userId', '==', profile.uid));
 
-      unsubscribeA = onSnapshot(qAssignments, async (snapshot) => {
+      // Live per-event listeners keyed by eventId, so that a change to a single
+      // event's isPublic/isDeleted flag is reflected the instant it happens —
+      // not only whenever the assignments subcollection itself changes. The old
+      // one-shot getDoc() approach cached a stale copy of each assigned event
+      // and only refreshed it when an assignment doc changed, so toggling
+      // "Internal Only" on/off could take a long time (or never) to show up.
+      const eventDocUnsubs = new Map<string, () => void>();
+      const assignedEventsMap = new Map<string, Event>();
+
+      unsubscribeA = onSnapshot(qAssignments, (snapshot) => {
         const assignedIds = Array.from(new Set(
           snapshot.docs
             .map(doc => doc.data().eventId as string | undefined)
             .filter((eventId): eventId is string => !!eventId)
         ));
 
-        const fetchedEvents = await Promise.all(
-          assignedIds.map(async (eventId) => {
-            const eventSnap = await getDoc(doc(db, 'events', eventId));
-            return eventSnap.exists() ? ({ id: eventSnap.id, ...eventSnap.data() } as Event) : null;
-          })
-        );
+        // Stop watching events we're no longer assigned to
+        for (const [eventId, unsub] of eventDocUnsubs.entries()) {
+          if (!assignedIds.includes(eventId)) {
+            unsub();
+            eventDocUnsubs.delete(eventId);
+            assignedEventsMap.delete(eventId);
+          }
+        }
 
-        if (!isMounted) return;
-        assignedEvents = fetchedEvents.filter((event): event is Event => !!event && event.templeId === profile.templeId && !event.isDeleted && event.isPublic === true);
+        // Start watching any newly-assigned events live
+        assignedIds.forEach(eventId => {
+          if (eventDocUnsubs.has(eventId)) return;
+          const unsubDoc = onSnapshot(doc(db, 'events', eventId), (eventSnap) => {
+            if (!isMounted) return;
+            if (eventSnap.exists()) {
+              assignedEventsMap.set(eventId, { id: eventSnap.id, ...eventSnap.data() } as Event);
+            } else {
+              assignedEventsMap.delete(eventId);
+            }
+            assignedEvents = Array.from(assignedEventsMap.values()).filter(
+              event => event.templeId === profile.templeId && !event.isDeleted
+            );
+            publishEvents();
+          });
+          eventDocUnsubs.set(eventId, unsubDoc);
+        });
+
+        assignedEvents = Array.from(assignedEventsMap.values()).filter(
+          event => event.templeId === profile.templeId && !event.isDeleted
+        );
         publishEvents();
       }, (err) => {
         console.error("Error fetching user assignments in dashboard:", err);
@@ -147,9 +177,11 @@ const UserDashboard = () => {
 
       const originalUnsubE = unsubscribeE;
       const originalUnsubA = unsubscribeA;
-      unsubscribeE = () => {
+      unsubscribeA = () => {
         isMounted = false;
-        originalUnsubE();
+        eventDocUnsubs.forEach(unsub => unsub());
+        eventDocUnsubs.clear();
+        originalUnsubA();
       };
       unsubscribeA = () => {
         isMounted = false;
