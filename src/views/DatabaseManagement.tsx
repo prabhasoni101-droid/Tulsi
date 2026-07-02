@@ -967,9 +967,23 @@ const DatabaseManagement: React.FC = () => {
         }, { merge: true });
       });
       await batch.commit();
-      setCustomColumns(prev => prev.filter(c => c !== colName));
+
+      // Update local state immediately so the column disappears instantly,
+      // instead of waiting for the devotees onSnapshot listener to quietly
+      // recompute customColumns on its own (which previously only visibly
+      // "took effect" after a manual page refresh).
+      const updatedCustomColumns = customColumns.filter(c => c !== colName);
+      setCustomColumns(updatedCustomColumns);
+      setColumnOrder(prev => prev.filter(c => c !== colName));
+
+      if (profile?.templeId) {
+        await setDoc(doc(db, 'temples', profile.templeId), {
+          databaseConfig: { customColumns: updatedCustomColumns }
+        }, { merge: true });
+      }
     } catch(err) {
       console.error('Delete column error:', err);
+      openAlert('Error', 'Could not delete the column. Please try again.');
     }
   };
 
@@ -1048,9 +1062,14 @@ const DatabaseManagement: React.FC = () => {
       return next;
     });
     if (profile?.templeId) {
-      await updateDoc(doc(db, 'temples', profile.templeId), {
-        'databaseConfig.customColumns': updatedCustomColumns
-      });
+      // The temples/{templeId} document is never explicitly created anywhere in
+      // the app (temple docs only ever get written to via subcollections), so
+      // updateDoc() here always threw "No document to update" the first time a
+      // column was duplicated. setDoc with merge:true creates the document if
+      // it doesn't exist yet, and safely merges the field otherwise.
+      await setDoc(doc(db, 'temples', profile.templeId), {
+        databaseConfig: { customColumns: updatedCustomColumns }
+      }, { merge: true });
     }
     setColContextMenu(null);
   };
@@ -1848,9 +1867,12 @@ const DatabaseManagement: React.FC = () => {
       currentAllCols = [...BASE_COLUMNS.filter(c => c !== 'Profile'), ...newCustomCols, 'Profile'];
       customColsChanged = true;
       if (profile?.templeId) {
-        await updateDoc(doc(db, 'temples', profile.templeId), {
-          'databaseConfig.customColumns': newCustomCols
-        });
+        // Same fix as handleDuplicateColumn: the temples/{templeId} doc is
+        // never pre-created, so updateDoc() would throw "No document to
+        // update" here as well. Use setDoc with merge:true instead.
+        await setDoc(doc(db, 'temples', profile.templeId), {
+          databaseConfig: { customColumns: newCustomCols }
+        }, { merge: true });
       }
     }
 
