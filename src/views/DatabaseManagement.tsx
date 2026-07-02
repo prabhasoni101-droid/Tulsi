@@ -895,11 +895,7 @@ const DatabaseManagement: React.FC = () => {
     }
   };
 
-  const handleUndo = async () => {
-    if (history.length === 0) return;
-    const lastAction = history[history.length - 1];
-    
-    const handleDuplicateColumn = async (colName: string) => {
+  const handleDuplicateColumn = async (colName: string) => {
     if (colName === 'Profile' || !profile?.templeId) return;
     let newColName = `${colName} Copy`;
     let suffix = 2;
@@ -940,6 +936,11 @@ const DatabaseManagement: React.FC = () => {
     });
     setColContextMenu(null);
   };
+  
+  const handleUndo = async () => {
+    if (history.length === 0) return;
+    const lastAction = history[history.length - 1];
+    
     // 48-hour limit check
     const actionTime = lastAction.createdAt ? (typeof lastAction.createdAt === 'number' ? lastAction.createdAt : (lastAction.createdAt.toMillis ? lastAction.createdAt.toMillis() : new Date(lastAction.createdAt).getTime())) : Date.now();
     const fortyEightHoursInMs = 48 * 60 * 60 * 1000;
