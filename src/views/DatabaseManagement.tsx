@@ -6,7 +6,7 @@ import {
   Edit2, X, AlertTriangle, ShieldCheck, Database,
   MoreVertical, Heart, User, Check, Clock,
   ChevronLeft, ChevronRight, Maximize2, Minimize2, Undo2, Redo2, Copy, Trash,
-  GripHorizontal
+  GripHorizontal,Layers
 } from 'lucide-react';
 import { 
   collection, query, onSnapshot, doc, updateDoc, 
@@ -899,6 +899,47 @@ const DatabaseManagement: React.FC = () => {
     if (history.length === 0) return;
     const lastAction = history[history.length - 1];
     
+    const handleDuplicateColumn = async (colName: string) => {
+    if (colName === 'Profile' || !profile?.templeId) return;
+    let newColName = `${colName} Copy`;
+    let suffix = 2;
+    while (allColumns.includes(newColName)) {
+      newColName = `${colName} Copy ${suffix}`;
+      suffix++;
+    }
+
+    const getVal = (d: any) => {
+      if (colName === 'Name') return d.name ?? d.Name ?? '';
+      if (colName === 'Age') return d.age ?? d.Age ?? '';
+      if (colName === 'Gender') return d.gender ?? d.Gender ?? '';
+      if (colName === 'Date of Birth') return d.dob ?? d['Date of Birth'] ?? '';
+      if (colName === 'Address') return d.address ?? d.Address ?? '';
+      if (colName === 'Institute') return d.institute ?? d.Institute ?? '';
+      if (colName === 'Mentor') return d.mentor ?? d.Mentor ?? '';
+      if (colName === 'Facilitator') return d.facilitatorName ?? d.facilitator ?? d.Facilitator ?? '';
+      if (colName === 'Chanting') return d.chanting ?? d.Chanting ?? '';
+      if (colName === 'Contact No.') return d.contact ?? d['Contact No.'] ?? '';
+      if (colName === 'Attendance') return d.attendanceCount ?? 0;
+      return d[colName] ?? '';
+    };
+
+    const batch = writeBatch(db);
+    devoteesRef.current.forEach(d => {
+      batch.set(doc(db, 'devotees', d.id!), { [newColName]: getVal(d) }, { merge: true });
+    });
+    await batch.commit();
+
+    setCustomColumns(prev => [...prev, newColName]);
+    setColumnOrder(prev => {
+      const base = prev.length > 0 ? prev : allColumns;
+      const idx = base.indexOf(colName);
+      const next = [...base];
+      if (idx === -1) { next.push(newColName); return next; }
+      next.splice(idx + 1, 0, newColName);
+      return next;
+    });
+    setColContextMenu(null);
+  };
     // 48-hour limit check
     const actionTime = lastAction.createdAt ? (typeof lastAction.createdAt === 'number' ? lastAction.createdAt : (lastAction.createdAt.toMillis ? lastAction.createdAt.toMillis() : new Date(lastAction.createdAt).getTime())) : Date.now();
     const fortyEightHoursInMs = 48 * 60 * 60 * 1000;
@@ -1356,7 +1397,10 @@ const DatabaseManagement: React.FC = () => {
       setCustomColumns(Array.from(columns));
     });
 
-    const eventsUnsubscribe = onSnapshot(collection(db, 'events'), (snap) => setTotalEvents(snap.size));
+    const eventsUnsubscribe = onSnapshot(query(collection(db, 'events'), where('templeId', '==', profile.templeId)), (snap) => {
+      const validCount = snap.docs.filter(d => !(d.data() as any).isDeleted).length;
+      setTotalEvents(validCount);
+    });
     
     const usersQuery = query(
       collection(db, 'users'),
@@ -1579,6 +1623,45 @@ const DatabaseManagement: React.FC = () => {
     });
   };
 
+  const handleDuplicateSelection = async () => {
+    if (!selection || !profile?.templeId) return;
+    const { startRow, endRow } = selection;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+
+    const rowsToDuplicate = paginatedDevotees.slice(minRow, maxRow + 1);
+    if (rowsToDuplicate.length === 0) return;
+
+    const getTimeMs = (c: any): number => {
+      if (!c) return Date.now();
+      if (typeof c === 'number') return c;
+      if (c.toMillis) return c.toMillis();
+      const t = new Date(c).getTime();
+      return isNaN(t) ? Date.now() : t;
+    };
+
+    const batch = writeBatch(db);
+    const newIds: string[] = [];
+    [...rowsToDuplicate].reverse().forEach((row, i) => {
+      const src = devoteesRef.current.find(d => d.id === row.id);
+      if (!src) return;
+      const { id, ...rest } = src as any;
+      const ref = doc(collection(db, 'devotees'));
+      newIds.push(ref.id);
+      const srcTime = getTimeMs((src as any).createdAt);
+      batch.set(ref, {
+        ...rest,
+        isDeleted: false,
+        createdAt: new Date(srcTime - (i + 1)).toISOString(),
+        updatedAt: serverTimestamp()
+      });
+    });
+    await batch.commit();
+    recordActivity({ type: 'addRows', ids: newIds });
+    setSelection(null);
+    setContextMenu(null);
+  };
+  
   const handleBulkCopy = () => {
     if (!selection) return;
     const { startRow, endRow, startCol, endCol } = selection;
@@ -2404,6 +2487,12 @@ const DatabaseManagement: React.FC = () => {
                     <Copy size={14} className="text-blue-500" /> Copy Selection
                   </button>
                   <button 
+                    onClick={handleDuplicateSelection}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/40 text-stone-700 text-[11px] font-bold transition-all"
+                  >
+                    <Layers size={14} className="text-purple-500" /> Duplicate
+                  </button>
+                  <button 
                     onClick={() => setShowShiftMenu(true)}
                     className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl hover:bg-white/40 text-stone-700 text-[11px] font-bold transition-all group"
                   >
@@ -2467,6 +2556,12 @@ const DatabaseManagement: React.FC = () => {
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/40 text-stone-700 text-[11px] font-bold transition-all"
               >
                 <Copy size={14} className="text-blue-500" /> Copy Column
+              </button>
+              <button 
+                onClick={() => handleDuplicateColumn(colContextMenu.col)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/40 text-stone-700 text-[11px] font-bold transition-all"
+              >
+                <Layers size={14} className="text-purple-500" /> Duplicate Column
               </button>
               <button 
                 onClick={() => {
