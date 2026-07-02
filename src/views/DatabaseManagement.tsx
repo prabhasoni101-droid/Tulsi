@@ -191,7 +191,7 @@ const checkRowInSelection = (rIndex: number, selection: {startRow: number, start
 };
 
 const MemoizedTableRow = React.memo((props: any) => {
-  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative } = props;
+  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps } = props;
 
   const rowRef = useRef<HTMLTableRowElement>(null);
 
@@ -426,6 +426,32 @@ const MemoizedTableRow = React.memo((props: any) => {
           );
         }
 
+        if (attendanceColumnMeta && attendanceColumnMeta[col]) {
+          const fixedEventId = attendanceColumnMeta[col].eventId;
+          const fixedMap = (attendanceColumnMaps && attendanceColumnMaps[fixedEventId]) || {};
+          const hasLoaded = Object.keys(fixedMap).length > 0;
+          return (
+            <td 
+              key={col} 
+              data-row-idx={rIndex}
+              data-col-idx={cIndex}
+              className={cn("px-6 py-3 border-r border-stone-50 text-center font-bold", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              onMouseDown={(e) => { if (e.button === 0) handleMouseDown(rIndex, cIndex); }}
+              onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
+              onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
+            >
+              <div className="flex items-center justify-center">
+                <span className={cn(
+                  "w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-black uppercase",
+                  fixedMap[d.id!] ? "bg-green-100 text-green-700" : (hasLoaded ? "bg-red-50 text-red-400" : "bg-stone-50 text-stone-400")
+                )}>
+                  {fixedMap[d.id!] ? 'P' : (hasLoaded ? 'A' : '-')}
+                </span>
+              </div>
+            </td>
+          );
+        }
+
         return (
           <td 
             key={col} 
@@ -476,6 +502,8 @@ const MemoizedTableRow = React.memo((props: any) => {
     prev.selectedDbEventId !== next.selectedDbEventId ||
     prev.dbAttendanceMap[prev.d.id] !== next.dbAttendanceMap[next.d.id] ||
     prev.totalEvents !== next.totalEvents ||
+    prev.attendanceColumnMeta !== next.attendanceColumnMeta ||
+    prev.attendanceColumnMaps !== next.attendanceColumnMaps ||
     prev.isOwner !== next.isOwner ||
     prev.isMentor !== next.isMentor
   ) {
@@ -574,6 +602,46 @@ const DatabaseManagement: React.FC = () => {
       localStorage.setItem(`col_order_${profile.templeId}`, JSON.stringify(columnOrder));
     }
   }, [columnOrder, profile?.templeId]);
+
+  // Metadata for duplicated "Attendance" columns: maps a column name -> the fixed
+  // event it snapshots. Kept OUT of devotee Firestore docs on purpose, so delete
+  // works cleanly and never touches the real "Attendance" column.
+  const [attendanceColumnMeta, setAttendanceColumnMeta] = useState<Record<string, { eventId: string, eventTitle: string }>>({});
+  const [attendanceColumnMaps, setAttendanceColumnMaps] = useState<Record<string, Record<string, boolean>>>({});
+
+  useEffect(() => {
+    if (profile?.templeId) {
+      const saved = localStorage.getItem(`attendance_cols_${profile.templeId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') setAttendanceColumnMeta(parsed);
+        } catch (e) {
+          console.error("Failed to parse saved attendance columns", e);
+        }
+      }
+    }
+  }, [profile?.templeId]);
+
+  useEffect(() => {
+    if (profile?.templeId) {
+      localStorage.setItem(`attendance_cols_${profile.templeId}`, JSON.stringify(attendanceColumnMeta));
+    }
+  }, [attendanceColumnMeta, profile?.templeId]);
+
+  // Live P/A map for every event referenced by a duplicated Attendance column
+  useEffect(() => {
+    const eventIds = Array.from(new Set(Object.values(attendanceColumnMeta).map(m => m.eventId)));
+    if (eventIds.length === 0) return;
+    const unsubs = eventIds.map(eventId => 
+      onSnapshot(collection(db, `events/${eventId}/attendance`), snap => {
+        const map: Record<string, boolean> = {};
+        snap.forEach(d => { map[d.id] = true; });
+        setAttendanceColumnMaps(prev => ({ ...prev, [eventId]: map }));
+      })
+    );
+    return () => unsubs.forEach(u => u());
+  }, [attendanceColumnMeta]);
   const [draggedColumnIdx, setDraggedColumnIdx] = useState<number | null>(null);
   const [colContextMenu, setColContextMenu] = useState<{x: number, y: number, col: string, colIdx: number, isOpen: boolean} | null>(null);
   const rowDragTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -872,6 +940,16 @@ const DatabaseManagement: React.FC = () => {
 
   const handleDeleteColumn = async (colName: string, recordHistory = true) => {
     try {
+      if (attendanceColumnMeta[colName]) {
+        setAttendanceColumnMeta(prev => {
+          const next = { ...prev };
+          delete next[colName];
+          return next;
+        });
+        setColumnOrder(prev => prev.filter(c => c !== colName));
+        return;
+      }
+
       const devoteesToUpdate = devotees.filter(d => d[colName] !== undefined);
       const oldValues: Record<string, any> = {};
       devoteesToUpdate.forEach(d => {
@@ -897,6 +975,34 @@ const DatabaseManagement: React.FC = () => {
 
   const handleDuplicateColumn = async (colName: string) => {
     if (colName === 'Profile' || !profile?.templeId) return;
+
+    if (colName === 'Attendance') {
+      if (selectedDbEventId === 'NONE') {
+        openAlert('Select an Event First', 'Please select an event in the Attendance column dropdown before duplicating it, so the new column knows which event to show.');
+        return;
+      }
+      const event = dbAttendanceEvents.find(e => e.id === selectedDbEventId);
+      const eventTitle = event?.title || 'Event';
+      let newColName = `Attendance - ${eventTitle}`;
+      let suffix = 2;
+      while (allColumns.includes(newColName) || attendanceColumnMeta[newColName]) {
+        newColName = `Attendance - ${eventTitle} (${suffix})`;
+        suffix++;
+      }
+
+      setAttendanceColumnMeta(prev => ({ ...prev, [newColName]: { eventId: selectedDbEventId, eventTitle } }));
+      setColumnOrder(prev => {
+        const base = prev.length > 0 ? prev : allColumns;
+        const idx = base.indexOf(colName);
+        const next = [...base];
+        if (idx === -1) { next.push(newColName); return next; }
+        next.splice(idx + 1, 0, newColName);
+        return next;
+      });
+      setColContextMenu(null);
+      return;
+    }
+
     let newColName = `${colName} Copy`;
     let suffix = 2;
     while (allColumns.includes(newColName)) {
@@ -936,7 +1042,7 @@ const DatabaseManagement: React.FC = () => {
     });
     setColContextMenu(null);
   };
-  
+
   const handleUndo = async () => {
     if (history.length === 0) return;
     const lastAction = history[history.length - 1];
@@ -2135,9 +2241,14 @@ const DatabaseManagement: React.FC = () => {
   const handleCopyColumnData = () => {
     if (!colContextMenu) return;
     const { col } = colContextMenu;
+    const fixedMeta = attendanceColumnMeta[col];
     const data = filteredDevotees.map(d => {
       let val = '';
-      if (col === 'Name') val = d.name || (d as any).Name || '';
+      if (fixedMeta) {
+        const m = attendanceColumnMaps[fixedMeta.eventId] || {};
+        val = m[d.id!] ? 'P' : (Object.keys(m).length > 0 ? 'A' : '-');
+      }
+      else if (col === 'Name') val = d.name || (d as any).Name || '';
       else if (col === 'Age') val = (d.age ?? (d as any).Age ?? '').toString();
       else val = formatValue((d as any)[col]);
       return val;
@@ -2264,6 +2375,10 @@ const DatabaseManagement: React.FC = () => {
       const row: any = {};
       allColumns.forEach(col => {
         if (col === 'Attendance') row[col] = `${d.attendanceCount || 0} / ${totalEvents}`;
+        else if (attendanceColumnMeta[col]) {
+          const m = attendanceColumnMaps[attendanceColumnMeta[col].eventId] || {};
+          row[col] = m[d.id!] ? 'P' : (Object.keys(m).length > 0 ? 'A' : '-');
+        }
         else if (col !== 'Profile') row[col] = (d as any)[col] || '';
       });
       return row;
@@ -2877,6 +2992,28 @@ const DatabaseManagement: React.FC = () => {
                           </th>
                         );
                       }
+                      if (attendanceColumnMeta[col]) {
+                        return (
+                          <th 
+                            key={col} 
+                            draggable
+                            onDragStart={(e) => handleColumnDragStart(e, idx)}
+                            onDragOver={(e) => handleColumnDragOver(e, idx)}
+                            onDrop={(e) => handleColumnDrop(e, idx)}
+                            className={cn(
+                              "px-8 py-5 border-r border-stone-100 cursor-move transition-all",
+                              draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100"
+                            )}
+                            onClick={() => handleColumnClick(idx)}
+                            onContextMenu={(e) => handleColumnContextMenu(e, col, idx)}
+                            title={attendanceColumnMeta[col].eventTitle}
+                          >
+                            <span className="font-black uppercase text-stone-400 tracking-tight truncate block w-36" title={attendanceColumnMeta[col].eventTitle}>
+                              {attendanceColumnMeta[col].eventTitle}
+                            </span>
+                          </th>
+                        );
+                      }
                       return (
                         <th 
                           key={col} 
@@ -2922,6 +3059,8 @@ const DatabaseManagement: React.FC = () => {
                         selectedDbEventId={selectedDbEventId}
                         dbAttendanceMap={dbAttendanceMap}
                         totalEvents={totalEvents}
+                        attendanceColumnMeta={attendanceColumnMeta}
+                        attendanceColumnMaps={attendanceColumnMaps}
                         selection={selection}
                         rowDragConfig={rowDragConfig}
                         isOwner={isOwner}
