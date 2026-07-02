@@ -939,23 +939,31 @@ const DatabaseManagement: React.FC = () => {
   }, [recordActivity]);
 
   const handleDeleteColumn = async (colName: string, recordHistory = true) => {
-    try {
-      if (attendanceColumnMeta[colName]) {
-        setAttendanceColumnMeta(prev => {
-          const next = { ...prev };
-          delete next[colName];
-          return next;
-        });
-        setColumnOrder(prev => prev.filter(c => c !== colName));
-        return;
-      }
-
-      const devoteesToUpdate = devotees.filter(d => d[colName] !== undefined);
-      const oldValues: Record<string, any> = {};
-      devoteesToUpdate.forEach(d => {
-        oldValues[d.id!] = d[colName];
+    if (attendanceColumnMeta[colName]) {
+      setAttendanceColumnMeta(prev => {
+        const next = { ...prev };
+        delete next[colName];
+        return next;
       });
+      setColumnOrder(prev => prev.filter(c => c !== colName));
+      return;
+    }
 
+    // Update local state FIRST, same as the Attendance branch above, so the
+    // column disappears from the table instantly instead of waiting on the
+    // Firestore round-trip below (which previously required a manual page
+    // refresh to "confirm" whether the delete had actually gone through).
+    const updatedCustomColumns = customColumns.filter(c => c !== colName);
+    setCustomColumns(updatedCustomColumns);
+    setColumnOrder(prev => prev.filter(c => c !== colName));
+
+    const devoteesToUpdate = devotees.filter(d => d[colName] !== undefined);
+    const oldValues: Record<string, any> = {};
+    devoteesToUpdate.forEach(d => {
+      oldValues[d.id!] = d[colName];
+    });
+
+    try {
       if (recordHistory) {
         recordActivity({ type: 'deleteColumn', name: colName, oldValues });
       }
@@ -968,15 +976,10 @@ const DatabaseManagement: React.FC = () => {
       });
       await batch.commit();
 
-      // Update local state immediately so the column disappears instantly,
-      // instead of waiting for the devotees onSnapshot listener to quietly
-      // recompute customColumns on its own (which previously only visibly
-      // "took effect" after a manual page refresh).
-      const updatedCustomColumns = customColumns.filter(c => c !== colName);
-      setCustomColumns(updatedCustomColumns);
-      setColumnOrder(prev => prev.filter(c => c !== colName));
-
       if (profile?.templeId) {
+        // Same fix as handleDuplicateColumn: temples/{templeId} is never
+        // pre-created, so updateDoc() would throw "No document to update"
+        // here too. setDoc with merge:true is safe whether the doc exists or not.
         await setDoc(doc(db, 'temples', profile.templeId), {
           databaseConfig: { customColumns: updatedCustomColumns }
         }, { merge: true });
@@ -1039,18 +1042,12 @@ const DatabaseManagement: React.FC = () => {
       return d[colName] ?? '';
     };
 
-    const batch = writeBatch(db);
-    devoteesRef.current.forEach(d => {
-      batch.set(doc(db, 'devotees', d.id!), { [newColName]: getVal(d) }, { merge: true });
-    });
-    await batch.commit();
-
-    // Compute the updated custom-columns list synchronously and use THIS value
-    // (not the stale `customColumns` closure) when inserting into columnOrder.
-    // Previously, setCustomColumns and setColumnOrder were updated independently;
-    // the columnOrder-sync effect ran with the old customColumns list first and
-    // filtered the brand-new column back out before React ever committed the
-    // customColumns update, so the duplicated column disappeared instantly.
+    // Update local state FIRST (same order as the Attendance branch above),
+    // so the new column appears instantly regardless of how the Firestore
+    // writes below resolve. Previously the UI updates ran only after both
+    // await'ed Firestore calls, and an uncaught crash in the second call
+    // (temples updateDoc) meant setColContextMenu(null) never ran and the
+    // duplicate looked like it silently failed/hung.
     const updatedCustomColumns = [...customColumns, newColName];
     setCustomColumns(updatedCustomColumns);
     setColumnOrder(prev => {
@@ -1061,17 +1058,31 @@ const DatabaseManagement: React.FC = () => {
       next.splice(idx + 1, 0, newColName);
       return next;
     });
-    if (profile?.templeId) {
-      // The temples/{templeId} document is never explicitly created anywhere in
-      // the app (temple docs only ever get written to via subcollections), so
-      // updateDoc() here always threw "No document to update" the first time a
-      // column was duplicated. setDoc with merge:true creates the document if
-      // it doesn't exist yet, and safely merges the field otherwise.
-      await setDoc(doc(db, 'temples', profile.templeId), {
-        databaseConfig: { customColumns: updatedCustomColumns }
-      }, { merge: true });
-    }
     setColContextMenu(null);
+
+    try {
+      const batch = writeBatch(db);
+      devoteesRef.current.forEach(d => {
+        batch.set(doc(db, 'devotees', d.id!), { [newColName]: getVal(d) }, { merge: true });
+      });
+      await batch.commit();
+
+      if (profile?.templeId) {
+        // The temples/{templeId} document is never explicitly created anywhere
+        // in the app (temple docs only ever get written to via subcollections
+        // like history), so updateDoc() here always threw "No document to
+        // update" the moment a non-Attendance column was duplicated — this is
+        // exactly why Attendance (which never calls this at all) worked fine
+        // while every other column silently broke. setDoc with merge:true
+        // creates the document if missing and merges the field otherwise.
+        await setDoc(doc(db, 'temples', profile.templeId), {
+          databaseConfig: { customColumns: updatedCustomColumns }
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.error('Duplicate column error:', err);
+      openAlert('Error', 'Could not duplicate the column. Please try again.');
+    }
   };
 
   const handleUndo = async () => {
