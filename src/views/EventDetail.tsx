@@ -117,8 +117,9 @@ const EventDetail = () => {
       const qU = query(collection(db, 'users'), where('templeId', '==', profile?.templeId));
       unsubUsers = onSnapshot(qU, snap => {
         let usrs = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
-        // Keep all active users, even owners can be callers/facilitators
-        usrs = usrs.filter(u => !u.isDeleted);
+        // Keep deleted users too (but only for display/name-resolution) so that
+        // Sevaks assigned on old/past events still show their real name instead
+        // of "Unknown". Only exclude deleted users from the active assignment list.
         setAppUsers(usrs);
       });
     }
@@ -848,7 +849,7 @@ const EventDetail = () => {
               <div className="w-full md:w-1/3 border-r border-stone-100 p-6 space-y-4 overflow-y-auto">
                 <h3 className="text-xs font-black text-stone-400 uppercase tracking-widest">1. Select Sevak</h3>
                 <div className="space-y-2">
-                  {appUsers.map(user => (
+                  {appUsers.filter(u => !u.isDeleted).map(user => (
                     <button
                       key={user.uid}
                       onClick={() => setSelectedUserId(user.uid)}

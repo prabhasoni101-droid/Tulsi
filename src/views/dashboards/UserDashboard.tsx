@@ -139,7 +139,7 @@ const UserDashboard = () => {
         );
 
         if (!isMounted) return;
-        assignedEvents = fetchedEvents.filter((event): event is Event => !!event && event.templeId === profile.templeId && !event.isDeleted);
+        assignedEvents = fetchedEvents.filter((event): event is Event => !!event && event.templeId === profile.templeId && !event.isDeleted && event.isPublic === true);
         publishEvents();
       }, (err) => {
         console.error("Error fetching user assignments in dashboard:", err);

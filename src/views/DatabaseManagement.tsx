@@ -1031,7 +1031,14 @@ const DatabaseManagement: React.FC = () => {
     });
     await batch.commit();
 
-    setCustomColumns(prev => [...prev, newColName]);
+    // Compute the updated custom-columns list synchronously and use THIS value
+    // (not the stale `customColumns` closure) when inserting into columnOrder.
+    // Previously, setCustomColumns and setColumnOrder were updated independently;
+    // the columnOrder-sync effect ran with the old customColumns list first and
+    // filtered the brand-new column back out before React ever committed the
+    // customColumns update, so the duplicated column disappeared instantly.
+    const updatedCustomColumns = [...customColumns, newColName];
+    setCustomColumns(updatedCustomColumns);
     setColumnOrder(prev => {
       const base = prev.length > 0 ? prev : allColumns;
       const idx = base.indexOf(colName);
@@ -1040,6 +1047,11 @@ const DatabaseManagement: React.FC = () => {
       next.splice(idx + 1, 0, newColName);
       return next;
     });
+    if (profile?.templeId) {
+      await updateDoc(doc(db, 'temples', profile.templeId), {
+        'databaseConfig.customColumns': updatedCustomColumns
+      });
+    }
     setColContextMenu(null);
   };
 
@@ -1556,14 +1568,17 @@ const DatabaseManagement: React.FC = () => {
             }
           }
         });
-        // Remove columns no longer present
-        const filtered = newOrder.filter(c => base.includes(c));
+        // Remove columns no longer present in `base` (known columns), but never
+        // drop an Attendance-duplicate column tracked in attendanceColumnMeta —
+        // those are intentionally kept out of `customColumns`/`base` and would
+        // otherwise get filtered out here right after being created.
+        const filtered = newOrder.filter(c => base.includes(c) || attendanceColumnMeta[c]);
         if (JSON.stringify(filtered) !== JSON.stringify(columnOrder)) {
           setColumnOrder(filtered);
         }
       }
     }
-  }, [customColumns, devotees.length, columnOrder]);
+  }, [customColumns, devotees.length, columnOrder, attendanceColumnMeta]);
 
   const allColumns = useMemo(() => {
     if (columnOrder.length > 0) return columnOrder;
