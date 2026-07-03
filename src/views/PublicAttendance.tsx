@@ -205,38 +205,27 @@ export default function PublicAttendance() {
     });
   };
 
-  // Auto-fill logic
-  useEffect(() => {
-    const contact = normalizePhoneNumber(form.contact.trim());
-    if (contact.length < 10) return; // Wait for full number
+  // Checks whether a saved profile already has every field the CURRENT
+  // event's template asks for. Templates can be changed by the owner at any
+  // time and can differ between events, so a profile saved against an older
+  // (simpler) template may be missing fields a newer template requires.
+  // 'chanting' is excluded because it always has a default value of '0',
+  // which is itself a valid selection, not a missing answer.
+  const isProfileCompleteForTemplate = (profile: Record<string, string>): boolean => {
+    const requiredFields: string[] = (template?.fields || []).filter(
+      (f: string) => f !== 'name' && f !== 'contact' && f !== 'chanting'
+    );
+    return requiredFields.every((field) => {
+      const key = field === 'facilitator' ? 'facilitatorId' : field;
+      return !!(profile[key] && String(profile[key]).trim().length > 0);
+    });
+  };
 
-    if (!event?.templeId) return;
-
-    const timeout = setTimeout(async () => {
-      const q = query(
-        collection(db, 'devotees'),
-        where('contact', '==', contact),
-        where('templeId', '==', event.templeId)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const found = snap.docs[0].data();
-        const updatedForm = {
-          ...form,
-          ...found,
-          contact: form.contact // Keep current contact string
-        };
-        setForm(updatedForm);
-        
-        // Also update this device's saved-profiles list to keep it in sync
-        const { facilitatorId: _, ...toSave } = updatedForm as any;
-        upsertSavedProfile(toSave);
-        setHasLocalStorageData(true);
-      }
-    }, 800); // 800ms debounce
-
-    return () => clearTimeout(timeout);
-  }, [form.contact, event?.templeId]);
+  // NOTE: This form intentionally does NOT auto-fill devotee details from the
+  // database while typing a mobile number in the full form. Auto-fill is now
+  // handled only through the device-local "Saved Devotees" quick-attendance
+  // bars (see savedProfiles above) — a devotee's data is only pre-filled when
+  // they explicitly tap their own saved bar, never silently while typing.
 
   const isQuickEntryEligible = useMemo(() => {
     if (!hasLocalStorageData || !form.name || !form.contact) return false;
@@ -287,7 +276,17 @@ export default function PublicAttendance() {
 
     if (submitting) return;
 
-    if (!isValidMobileNumber(sourceData.contact)) {
+    // sourceData.contact can be either the raw 10-digit value the devotee just
+    // typed into the form, OR an already-normalized "+91XXXXXXXXXX" value
+    // pulled from a saved quick-attendance profile (saved profiles store the
+    // normalized contact — see devoteeData.contact below). isValidMobileNumber
+    // only recognizes bare 10-digit numbers, so a normalized +91 number was
+    // incorrectly failing validation and showing "Please enter a valid
+    // 10-digit mobile number" even though the number was completely correct.
+    // Stripping a leading 91/+91 first makes validation prefix-agnostic, so
+    // this alert now only fires for genuinely invalid numbers.
+    const bareContactDigits = String(sourceData.contact || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+    if (!isValidMobileNumber(bareContactDigits)) {
       alert("Please enter a valid 10-digit mobile number.");
       return;
     }
@@ -590,7 +589,17 @@ export default function PublicAttendance() {
                            if (submitting) return;
                            setSelectedProfileIndex(idx);
                            setForm(prev => ({ ...prev, ...profile }));
-                           handleSubmit(undefined, profile);
+                           if (isProfileCompleteForTemplate(profile)) {
+                             handleSubmit(undefined, profile);
+                           } else {
+                             // This event's template (possibly changed by the
+                             // owner since this profile was last saved) asks
+                             // for a field this devotee hasn't filled in yet.
+                             // Open the full form, pre-filled with what we
+                             // already have, instead of silently submitting
+                             // incomplete data.
+                             openFullForm();
+                           }
                          }}
                          className="flex items-center justify-between flex-1 cursor-pointer"
                        >
