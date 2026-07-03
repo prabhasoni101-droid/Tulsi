@@ -17,7 +17,9 @@ import {
   Download,
   Clock,
   Printer,
-  ArrowRight
+  ArrowRight,
+  ArrowLeft,
+  X
 } from 'lucide-react';
 import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../lib/utils';
 import { toPng } from 'html-to-image';
@@ -47,6 +49,14 @@ export default function PublicAttendance() {
   const passRef = useRef<HTMLDivElement>(null);
   const [showFullFormOverride, setShowFullFormOverride] = useState(false);
   const [hasLocalStorageData, setHasLocalStorageData] = useState(false);
+  // Up to 10 saved devotee profiles can live on the same device, so a
+  // shared phone (e.g. at home) can quickly mark attendance for multiple
+  // family members without anyone having to retype their details from
+  // scratch, and without risking a wrong/mixed-up entry.
+  const MAX_SAVED_PROFILES = 10;
+  const SAVED_PROFILES_KEY = 'iskcon_devotee_profiles';
+  const [savedProfiles, setSavedProfiles] = useState<Record<string, string>[]>([]);
+  const [selectedProfileIndex, setSelectedProfileIndex] = useState<number | null>(null);
 
   const downloadPass = async () => {
     if (passRef.current === null) return;
@@ -111,21 +121,89 @@ export default function PublicAttendance() {
     return () => unsubEvent();
   }, [id]);
 
-  // Load from localStorage on mount
+  // Load saved profiles from localStorage on mount. Older versions of this
+  // form stored a single profile under 'iskcon_devotee_data'; if that's all
+  // we find, migrate it into the new array format so existing devotees don't
+  // lose their saved entry.
   useEffect(() => {
-    const savedData = localStorage.getItem('iskcon_devotee_data');
-    if (savedData) {
+    let profiles: Record<string, string>[] = [];
+    const savedList = localStorage.getItem(SAVED_PROFILES_KEY);
+    if (savedList) {
       try {
-        const parsed = JSON.parse(savedData);
-        setForm(prev => ({ ...prev, ...parsed }));
-        if (parsed.name && parsed.contact) {
-          setHasLocalStorageData(true);
-        }
+        const parsed = JSON.parse(savedList);
+        if (Array.isArray(parsed)) profiles = parsed;
       } catch (e) {
-        console.error("Error parsing saved data", e);
+        console.error("Error parsing saved profiles", e);
+      }
+    } else {
+      const legacySingle = localStorage.getItem('iskcon_devotee_data');
+      if (legacySingle) {
+        try {
+          const parsed = JSON.parse(legacySingle);
+          if (parsed && parsed.name && parsed.contact) {
+            profiles = [parsed];
+            localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(profiles));
+          }
+        } catch (e) {
+          console.error("Error parsing legacy saved data", e);
+        }
       }
     }
+
+    if (profiles.length > 0) {
+      setSavedProfiles(profiles);
+      setHasLocalStorageData(true);
+      setSelectedProfileIndex(0);
+      setForm(prev => ({ ...prev, ...profiles[0] }));
+    }
   }, []);
+
+  // Adds a new saved profile or updates an existing one (matched by contact
+  // number) in this device's saved-profiles list, persists it, and returns
+  // the profile's index so the caller can mark it as the active/selected bar.
+  // Capped at MAX_SAVED_PROFILES — once full, the oldest profile is dropped
+  // to make room, so a shared device never silently loses the ability to add
+  // a new family member.
+  const upsertSavedProfile = (profileData: Record<string, string>): number => {
+    let resultIndex = 0;
+    setSavedProfiles(prev => {
+      const existingIdx = prev.findIndex(p => p.contact === profileData.contact);
+      let next: Record<string, string>[];
+      if (existingIdx !== -1) {
+        next = [...prev];
+        next[existingIdx] = profileData;
+        resultIndex = existingIdx;
+      } else {
+        next = [...prev, profileData];
+        if (next.length > MAX_SAVED_PROFILES) {
+          next = next.slice(next.length - MAX_SAVED_PROFILES);
+        }
+        resultIndex = next.length - 1;
+      }
+      localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
+      return next;
+    });
+    return resultIndex;
+  };
+
+  const removeSavedProfile = (index: number) => {
+    setSavedProfiles(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
+      if (next.length === 0) {
+        setHasLocalStorageData(false);
+        setSelectedProfileIndex(null);
+        setForm({
+          name: '', contact: '', facilitatorId: '', age: '', dob: '',
+          address: '', gender: '', institute: '', mentor: '', chanting: '0'
+        });
+      } else {
+        setSelectedProfileIndex(0);
+        setForm(prevForm => ({ ...prevForm, ...next[0] }));
+      }
+      return next;
+    });
+  };
 
   // Auto-fill logic
   useEffect(() => {
@@ -150,9 +228,9 @@ export default function PublicAttendance() {
         };
         setForm(updatedForm);
         
-        // Also update local storage to keep it in sync for this device
+        // Also update this device's saved-profiles list to keep it in sync
         const { facilitatorId: _, ...toSave } = updatedForm as any;
-        localStorage.setItem('iskcon_devotee_data', JSON.stringify(toSave));
+        upsertSavedProfile(toSave);
         setHasLocalStorageData(true);
       }
     }, 800); // 800ms debounce
@@ -166,9 +244,41 @@ export default function PublicAttendance() {
     return true;
   }, [form.name, form.contact, showFullFormOverride, hasLocalStorageData]);
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  // Opening the full form pushes a history entry so the device's hardware
+  // back button / edge-swipe gesture returns to the saved-devotees quick bar
+  // screen instead of navigating away from the form entirely. Tapping the
+  // in-app back arrow calls history.back(), which triggers the same
+  // popstate handler below, keeping both paths consistent.
+  const openFullForm = () => {
+    window.history.pushState({ iskconFullForm: true }, '');
+    setShowFullFormOverride(true);
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setShowFullFormOverride(false);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const closeFullForm = () => {
+    if (showFullFormOverride) {
+      window.history.back();
+    } else {
+      setShowFullFormOverride(false);
+    }
+  };
+
+  const handleSubmit = async (e?: React.FormEvent, profileOverride?: Record<string, string>) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!event) return;
+
+    // When submitting directly from a saved-devotee bar, use that bar's exact
+    // stored data rather than the shared `form` state — this avoids any race
+    // where a fast second tap on a different bar submits the wrong person's
+    // details before React finishes updating `form`.
+    const sourceData = profileOverride ?? form;
     
     if (!(event as any).isAttendanceOpen) {
       alert("Attendance is currently closed for this event.");
@@ -177,28 +287,28 @@ export default function PublicAttendance() {
 
     if (submitting) return;
 
-    if (!isValidMobileNumber(form.contact)) {
+    if (!isValidMobileNumber(sourceData.contact)) {
       alert("Please enter a valid 10-digit mobile number.");
       return;
     }
     
     setSubmitting(true);
     try {
-      const normalizedContact = normalizePhoneNumber(form.contact.trim());
+      const normalizedContact = normalizePhoneNumber(sourceData.contact.trim());
       const facilitatorName =
-        templeUsers.find(u => u.uid === form.facilitatorId)?.displayName || form.facilitator || 'Self';
+        templeUsers.find(u => u.uid === sourceData.facilitatorId)?.displayName || sourceData.facilitator || 'Self';
 
       const devoteeData = {
-        name: form.name.trim(),
+        name: sourceData.name.trim(),
         contact: normalizedContact,
-        age: form.age || '',
-        dob: form.dob || '',
-        address: form.address || '',
-        gender: form.gender || '',
-        institute: form.institute || '',
-        mentor: form.mentor || '',
-        chanting: form.chanting || '0',
-        facilitatorId: form.facilitatorId || '',
+        age: sourceData.age || '',
+        dob: sourceData.dob || '',
+        address: sourceData.address || '',
+        gender: sourceData.gender || '',
+        institute: sourceData.institute || '',
+        mentor: sourceData.mentor || '',
+        chanting: sourceData.chanting || '0',
+        facilitatorId: sourceData.facilitatorId || '',
         facilitatorName,
         templeId: event.templeId,
         updatedAt: new Date().toISOString(),
@@ -259,7 +369,9 @@ export default function PublicAttendance() {
       });
 
       const { facilitatorId: _, ...toSave } = devoteeData;
-      localStorage.setItem('iskcon_devotee_data', JSON.stringify(toSave));
+      const savedIdx = upsertSavedProfile(toSave as unknown as Record<string, string>);
+      setSelectedProfileIndex(savedIdx);
+      setHasLocalStorageData(true);
 
       setPassData({
         ...devoteeData,
@@ -437,7 +549,10 @@ export default function PublicAttendance() {
                  <h2 className="text-xl font-black text-stone-800">Saved Devotees</h2>
                  <button 
                    onClick={() => {
+                     localStorage.removeItem(SAVED_PROFILES_KEY);
                      localStorage.removeItem('iskcon_devotee_data');
+                     setSavedProfiles([]);
+                     setSelectedProfileIndex(null);
                      setForm({
                        name: '', contact: '', facilitatorId: '', age: '', dob: '',
                        address: '', gender: '', institute: '', mentor: '', chanting: '0'
@@ -446,37 +561,78 @@ export default function PublicAttendance() {
                    }}
                    className="text-[10px] uppercase font-black tracking-widest text-red-400 hover:text-red-500 transition-colors"
                  >
-                   Clear
+                   Clear All
                  </button>
                </div>
-               
-               <div 
-                 onClick={() => handleSubmit()}
-                 className={`border ${submitting ? 'border-orange-100 opacity-70 scale-[0.98]' : 'border-orange-200 hover:shadow-orange-100 hover:shadow-lg cursor-pointer'} bg-white rounded-[2rem] p-6 flex items-center justify-between transition-all`}
-               >
-                 <div>
-                   <h3 className="text-2xl font-black text-stone-800 tracking-tight">{form.name}</h3>
-                   {form.mentor && <p className="text-sm font-medium text-stone-500 mt-1">Linked: {form.mentor}</p>}
-                 </div>
-                 <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center shrink-0">
-                   {submitting ? (
-                      <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                   ) : (
-                      <ArrowRight size={24} />
-                   )}
-                 </div>
+
+               <div className="space-y-3">
+                 {savedProfiles.map((profile, idx) => {
+                   const isSelected = selectedProfileIndex === idx;
+                   const isBusy = submitting && isSelected;
+                   return (
+                     <div
+                       key={profile.contact || idx}
+                       className={`relative border ${isBusy ? 'border-orange-100 opacity-70 scale-[0.98]' : 'border-orange-200 hover:shadow-orange-100 hover:shadow-lg'} bg-white rounded-[2rem] p-6 flex items-center justify-between transition-all`}
+                     >
+                       <button
+                         type="button"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           removeSavedProfile(idx);
+                         }}
+                         aria-label={`Remove ${profile.name}`}
+                         className="absolute -top-2 -right-2 w-7 h-7 bg-stone-800 hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-20"
+                       >
+                         <X size={14} />
+                       </button>
+                       <div
+                         onClick={() => {
+                           if (submitting) return;
+                           setSelectedProfileIndex(idx);
+                           setForm(prev => ({ ...prev, ...profile }));
+                           handleSubmit(undefined, profile);
+                         }}
+                         className="flex items-center justify-between flex-1 cursor-pointer"
+                       >
+                         <div>
+                           <h3 className="text-2xl font-black text-stone-800 tracking-tight">{profile.name}</h3>
+                           {profile.mentor && <p className="text-sm font-medium text-stone-500 mt-1">Linked: {profile.mentor}</p>}
+                         </div>
+                         <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center shrink-0">
+                           {isBusy ? (
+                              <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                           ) : (
+                              <ArrowRight size={24} />
+                           )}
+                         </div>
+                       </div>
+                     </div>
+                   );
+                 })}
                </div>
 
                <button 
-                 onClick={() => setShowFullFormOverride(true)}
-                 disabled={submitting}
-                 className="mt-6 w-full py-5 bg-orange-50 hover:bg-orange-100 text-orange-800 font-black tracking-widest text-[10px] uppercase rounded-[1.5rem] transition-colors"
+                 onClick={openFullForm}
+                 disabled={submitting || savedProfiles.length >= MAX_SAVED_PROFILES}
+                 className="mt-6 w-full py-5 bg-orange-50 hover:bg-orange-100 text-orange-800 font-black tracking-widest text-[10px] uppercase rounded-[1.5rem] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                >
-                 + नया पास बनाएँ (New Entry)
+                 {savedProfiles.length >= MAX_SAVED_PROFILES
+                   ? 'Maximum 10 Saved Devotees Reached'
+                   : '+ नया पास बनाएँ (New Entry)'}
                </button>
              </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
+              {hasLocalStorageData && savedProfiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={closeFullForm}
+                  aria-label="Back to saved devotees"
+                  className="flex items-center gap-2 text-stone-400 hover:text-stone-600 font-black text-[10px] uppercase tracking-widest transition-colors -mt-2 -ml-1 mb-2"
+                >
+                  <ArrowLeft size={16} /> Back
+                </button>
+              )}
               <div className="space-y-6">
                 {/* Primary Identifier */}
                 <div className="space-y-3">
@@ -488,7 +644,10 @@ export default function PublicAttendance() {
                     <button 
                       type="button"
                       onClick={() => {
+                        localStorage.removeItem(SAVED_PROFILES_KEY);
                         localStorage.removeItem('iskcon_devotee_data');
+                        setSavedProfiles([]);
+                        setSelectedProfileIndex(null);
                         setForm({
                           name: '', contact: '', facilitatorId: '', age: '', dob: '',
                           address: '', gender: '', institute: '', mentor: '', chanting: '0'
