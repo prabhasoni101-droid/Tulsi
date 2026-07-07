@@ -102,38 +102,45 @@ export default function History() {
     setExpandedPA(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // CORRECTED CODE
   useEffect(() => {
     if (!profile?.templeId) return;
 
     // Fetch deleted events
-    const unsubE = onSnapshot(collection(db, 'events'), (snap) => {
+    const eventsQ = query(collection(db, 'events'), where('templeId', '==', profile.templeId));
+    const unsubE = onSnapshot(eventsQ, (snap) => {
       setDeletedEvents(snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Event))
-        .filter(e => e.templeId === profile.templeId && e.isDeleted && !(e as any).isArchived)
+        .filter(e => e.isDeleted && !(e as any).isArchived)
       );
     });
 
     // Fetch deleted devotees
-    const unsubD = onSnapshot(collection(db, 'devotees'), (snap) => {
+    const devoteesQ = query(collection(db, 'devotees'), where('templeId', '==', profile.templeId));
+    const unsubD = onSnapshot(devoteesQ, (snap) => {
       setDeletedDevotees(snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Devotee))
-        .filter(d => d.templeId === profile.templeId && d.isDeleted)
+        .filter(d => d.isDeleted)
       );
     });
 
+    // CORRECTED CODE
     // Fetch deleted staff
-    const unsubS = onSnapshot(collection(db, 'users'), (snap) => {
+    const usersQ = query(collection(db, 'users'), where('templeId', '==', profile.templeId));
+    const unsubS = onSnapshot(usersQ, (snap) => {
       setDeletedStaff(snap.docs
         .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
-        .filter(u => u.templeId === profile.templeId && u.isDeleted)
+        .filter(u => u.isDeleted)
       );
     });
 
+    // CORRECTED CODE
     // Fetch deleted profile activities from callingHistory
-    const unsubPA = onSnapshot(collection(db, 'callingHistory'), (snap) => {
+    const callingHistoryQ = query(collection(db, 'callingHistory'), where('templeId', '==', profile.templeId));
+    const unsubPA = onSnapshot(callingHistoryQ, (snap) => {
       setDeletedProfileActivities(snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((pa: any) => pa.isDeleted && (pa.templeId === profile.templeId || !pa.templeId))
+        .filter((pa: any) => pa.isDeleted)
       );
     });
 
@@ -157,10 +164,10 @@ export default function History() {
       let count = 0;
 
       // Check events
-      const eventsSnap = await getDocs(collection(db, 'events'));
+      const eventsSnap = await getDocs(query(collection(db, 'events'), where('templeId', '==', profile.templeId)));
       eventsSnap.forEach(snap => {
         const data = snap.data();
-        if (data.templeId === profile.templeId && data.isDeleted && data.deletedAt && !data.isArchived) {
+        if (data.isDeleted && data.deletedAt && !data.isArchived) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
             batch.update(snap.ref, { isArchived: true });
@@ -170,10 +177,10 @@ export default function History() {
       });
 
       // Check devotees
-      const devoteesSnap = await getDocs(collection(db, 'devotees'));
+      const devoteesSnap = await getDocs(query(collection(db, 'devotees'), where('templeId', '==', profile.templeId)));
       devoteesSnap.forEach(snap => {
         const data = snap.data();
-        if (data.templeId === profile.templeId && data.isDeleted && data.deletedAt) {
+        if (data.isDeleted && data.deletedAt) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
             batch.delete(snap.ref);
@@ -182,11 +189,12 @@ export default function History() {
         }
       });
 
+      // CORRECTED CODE
       // Check users/staff
-      const usersSnap = await getDocs(collection(db, 'users'));
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('templeId', '==', profile.templeId)));
       usersSnap.forEach(snap => {
         const data = snap.data();
-        if (data.templeId === profile.templeId && data.isDeleted && data.deletedAt) {
+        if (data.isDeleted && data.deletedAt) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
             batch.delete(snap.ref);
@@ -195,8 +203,9 @@ export default function History() {
         }
       });
 
+      // CORRECTED CODE
       // Check callingHistory / profile activities
-      const historySnap = await getDocs(collection(db, 'callingHistory'));
+      const historySnap = await getDocs(query(collection(db, 'callingHistory'), where('templeId', '==', profile.templeId)));
       historySnap.forEach(snap => {
         const data = snap.data();
         if (data.isDeleted && data.deletedAt) {
