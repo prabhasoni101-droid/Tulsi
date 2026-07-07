@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, getDocs, updateDoc, increment, writeBatch, deleteDoc, collectionGroup, serverTimestamp } from 'firebase/firestore';
 import { Devotee, Event, Attendance, CallingAssignment, Template } from '../types';
+import Papa from 'papaparse';
 import Layout from '../components/Layout';
 import { SearchInput } from '../components/SearchInput';
 import { 
@@ -29,7 +30,7 @@ import {
   Heart,
   User
 } from 'lucide-react';
-import { cn, getPublicAttendanceUrl } from '../lib/utils';
+import { cn, getPublicAttendanceUrl, normalizePhoneNumber } from '../lib/utils';
 import ContactLink from '../components/ContactLink';
 import { useAuth } from '../context/AuthContext';
 import { jsPDF } from 'jspdf';
@@ -215,6 +216,8 @@ const AttendanceSheet = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, title: string } | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [uploadingAttendance, setUploadingAttendance] = useState(false);
+  const attendanceFileInputRef = React.useRef<HTMLInputElement>(null);
   const { profile } = useAuth();
   const navigate = useNavigate();
 
@@ -552,6 +555,178 @@ const AttendanceSheet = () => {
     }
   };
 
+  const handleAttendanceUploadClick = () => {
+    attendanceFileInputRef.current?.click();
+  };
+
+  const handleAttendanceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!profile?.templeId) {
+      alert("Unable to determine your temple. Please refresh and try again.");
+      if (e.target) e.target.value = '';
+      return;
+    }
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        setUploadingAttendance(true);
+        try {
+          const rows: any[] = (results.data as any[]).filter(r => r && Object.keys(r).length > 0);
+          if (rows.length === 0) {
+            alert("The uploaded file has no data rows.");
+            return;
+          }
+
+          const headers = Object.keys(rows[0]);
+          const nameAliases = ['name', 'devotee name', 'devotee', 'नाम'];
+          const contactAliases = ['contact', 'contact no.', 'contact no', 'mobile', 'phone', 'ph no.', 'संपर्क', 'फोन', 'मोबाइल'];
+          const nameKey = headers.find(h => nameAliases.includes(h.trim().toLowerCase()));
+          const contactKey = headers.find(h => contactAliases.includes(h.trim().toLowerCase()));
+
+          if (!nameKey || !contactKey) {
+            alert('Could not find "Name" and "Contact" columns in the uploaded file.');
+            return;
+          }
+
+          const eventCols = headers.filter(h => h !== nameKey && h !== contactKey);
+          if (eventCols.length === 0) {
+            alert("No event columns were found in the uploaded file.");
+            return;
+          }
+
+          // Resolve or create an event for every event column (title = column header)
+          const eventTitleToId = new Map<string, string>();
+          events.forEach(ev => { if (ev.title) eventTitleToId.set(ev.title.trim().toLowerCase(), ev.id!); });
+
+          const eventBatch = writeBatch(db);
+          let newEventOps = 0;
+          eventCols.forEach(col => {
+            const key = col.trim().toLowerCase();
+            if (!eventTitleToId.has(key)) {
+              const evRef = doc(collection(db, 'events'));
+              eventBatch.set(evRef, {
+                title: col.trim(),
+                date: new Date().toISOString(),
+                description: 'Imported from attendance CSV upload.',
+                mediaUrl: '',
+                isPublic: false,
+                createdBy: profile.uid,
+                templeId: profile.templeId,
+                createdAt: new Date().toISOString(),
+                isAttendanceOpen: false
+              });
+              eventTitleToId.set(key, evRef.id);
+              newEventOps++;
+            }
+          });
+          if (newEventOps > 0) await eventBatch.commit();
+
+          // Lookup maps for matching devotees by contact and by name+contact
+          const byContact = new Map<string, string>();
+          const byNameContact = new Map<string, string>();
+          devotees.forEach(d => {
+            const n = (d.name || '').trim().toLowerCase();
+            const c = normalizePhoneNumber(d.contact || '');
+            if (c) byContact.set(c, d.id!);
+            byNameContact.set(`${n}_${c}`, d.id!);
+          });
+
+          let presentCount = 0, absentCount = 0, newDevoteeCount = 0;
+          let batch = writeBatch(db);
+          let opCount = 0;
+          const flush = async () => {
+            if (opCount > 0) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
+          };
+
+          for (const row of rows) {
+            const rawName = (row[nameKey] || '').toString().trim();
+            const rawContact = (row[contactKey] || '').toString().trim();
+            if (!rawName && !rawContact) continue;
+
+            const normContact = normalizePhoneNumber(rawContact);
+            const compositeKey = `${rawName.toLowerCase()}_${normContact}`;
+
+            const presentCols: string[] = [];
+            const absentCols: string[] = [];
+            eventCols.forEach(col => {
+              const cell = (row[col] ?? '').toString().trim().toUpperCase();
+              if (cell === 'P' || cell === 'PRESENT') presentCols.push(col);
+              else if (cell === 'A' || cell === 'ABSENT') absentCols.push(col);
+            });
+            if (presentCols.length === 0 && absentCols.length === 0) continue;
+
+            let devoteeId = (normContact && byContact.get(normContact)) || byNameContact.get(compositeKey);
+            const isNewDevotee = !devoteeId;
+            if (!devoteeId) {
+              devoteeId = doc(collection(db, 'devotees')).id;
+              batch.set(doc(db, 'devotees', devoteeId), {
+                name: rawName || 'Unknown',
+                contact: normContact,
+                mentor: '',
+                chanting: '0',
+                attendanceCount: presentCols.length,
+                templeId: profile.templeId,
+                isDeleted: false,
+                isImported: true,
+                createdAt: new Date().toISOString()
+              });
+              opCount++;
+              if (normContact) byContact.set(normContact, devoteeId);
+              byNameContact.set(compositeKey, devoteeId);
+              newDevoteeCount++;
+            } else if (presentCols.length > 0) {
+              batch.update(doc(db, 'devotees', devoteeId), { attendanceCount: increment(presentCols.length) });
+              opCount++;
+            }
+
+            presentCols.forEach(col => {
+              const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
+              batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
+                eventId, devoteeId, userId: profile.uid,
+                devoteeName: rawName, devoteeContact: normContact,
+                status: 'COMPLETED', response: 'COMING', updatedAt: new Date().toISOString()
+              });
+              batch.set(doc(db, `events/${eventId}/attendance`, devoteeId!), {
+                devoteeId, name: rawName, contact: normContact, present: true,
+                markedAt: new Date().toISOString(), markedBy: profile.uid, templeId: profile.templeId
+              });
+              opCount += 2;
+              presentCount++;
+            });
+            absentCols.forEach(col => {
+              const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
+              batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
+                eventId, devoteeId, userId: profile.uid,
+                devoteeName: rawName, devoteeContact: normContact,
+                status: 'COMPLETED', response: 'NOT_COMING', updatedAt: new Date().toISOString()
+              });
+              opCount++;
+              absentCount++;
+            });
+
+            if (opCount >= 400) await flush();
+          }
+          await flush();
+
+          alert(`Attendance import complete. Present: ${presentCount}, Absent: ${absentCount}, New devotees added: ${newDevoteeCount}.`);
+        } catch (err) {
+          console.error("Attendance CSV upload failed:", err);
+          alert("Failed to process the attendance CSV file.");
+        } finally {
+          setUploadingAttendance(false);
+          if (e.target) e.target.value = '';
+        }
+      },
+      error: (err) => {
+        console.error(err);
+        alert("Failed to parse the CSV file.");
+      }
+    });
+  };
+
   const filteredAttendance = attendanceRecords.filter(d => {
     const tokens = searchTerm.toLowerCase().split(/\s+/).filter(t => t.length > 0);
     const allText = Object.values(d).map(v => typeof v === 'string' || typeof v === 'number' ? String(v).toLowerCase() : '').join(' ');
@@ -579,6 +754,20 @@ const AttendanceSheet = () => {
               <ChevronLeft size={18} /> Back to Live Vault
             </button>
             <div className="flex items-center gap-4">
+              <input
+                type="file"
+                ref={attendanceFileInputRef}
+                className="hidden"
+                accept=".csv"
+                onChange={handleAttendanceCSVUpload}
+              />
+              <button
+                onClick={handleAttendanceUploadClick}
+                disabled={uploadingAttendance}
+                className="text-orange-600 hover:text-orange-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 border border-orange-100 px-3 py-1.5 rounded-xl bg-orange-50 transition-colors disabled:opacity-50"
+              >
+                <Download size={14} className="rotate-180" /> {uploadingAttendance ? 'Uploading...' : 'Upload Attendance'}
+              </button>
               {historyEvents.length > 0 && (
                 <button 
                   onClick={handleClearAllHistory}
