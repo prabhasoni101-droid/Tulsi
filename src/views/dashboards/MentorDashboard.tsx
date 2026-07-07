@@ -66,7 +66,12 @@ const MentorDashboard = () => {
       const eMap: Record<string, Event> = {};
       snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Event))
-        .filter(e => e.templeId === profile.templeId && !e.isDeleted)
+        // Internal-only events (isPublic !== true) must stay hidden from a
+        // mentor unless they're individually calling-assigned to that event
+        // (handled by the assignment-listener merge below) — previously this
+        // filter was missing entirely, so every event in the temple, public
+        // or internal, showed up here the instant it was created.
+        .filter(e => e.templeId === profile.templeId && !e.isDeleted && e.isPublic === true)
         .forEach(e => {
           eMap[e.id!] = e;
         });

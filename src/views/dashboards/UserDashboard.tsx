@@ -294,22 +294,59 @@ const UserDashboard = () => {
 
       if (duplicateType) {
         setDuplicateStatus({ type: duplicateType, existingDevotee: existingDevotee! });
-        if (duplicateType === 'complete') {
-          // If complete duplicate, we might want to stop or just warn
-          // For now, let's just warn as requested
+      }
+
+      // The Facilitation form must NEVER create a brand-new devotee record —
+      // creating devotees is exclusively the "Add Devotee" form's job. If the
+      // devotee already exists (same name + contact), just attach the
+      // existing record to this user's facilitation list. If it doesn't
+      // exist yet, refuse and point the user to the correct form, instead of
+      // silently creating a duplicate database entry.
+      if (isFacilitationAdd) {
+        if (duplicateType !== 'complete' || !existingDevotee) {
+          alert(
+            "This devotee isn't in the database yet. Please add them using the \"Add Devotee\" form first — " +
+            "the Facilitation form can only add an existing devotee to your list."
+          );
+          setIsSubmitting(false);
+          return;
         }
+
+        if (existingDevotee.facilitatorId && existingDevotee.facilitatorId !== profile?.uid) {
+          alert(`This devotee is already being facilitated by ${existingDevotee.facilitatorName || 'another sevak'}.`);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (existingDevotee.facilitatorId === profile?.uid) {
+          alert('This devotee is already in your facilitation list.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        await updateDoc(doc(db, 'devotees', existingDevotee.id!), {
+          facilitatorId: profile?.uid,
+          facilitatorName: profile?.displayName || 'Anonymous',
+          isPrivate: true,
+        });
+
+        setNewDevotee({ name: '', contact: '', mentor: '', chanting: '0', age: '', address: '', gender: 'MALE', institute: '', dob: '' });
+        alert('Existing devotee added to your facilitation list!');
+        setActiveTab('facilitation');
+        setIsSubmitting(false);
+        return;
       }
 
       const devoteeData = {
         ...newDevotee,
         name: devoteeName,
         contact: normalizedContact,
-        facilitatorId: isFacilitationAdd ? profile?.uid : '',
-        facilitatorName: isFacilitationAdd ? (profile?.displayName || 'Anonymous') : '',
+        facilitatorId: '',
+        facilitatorName: '',
         templeId: profile?.templeId,
         attendanceCount: 0,
         createdAt: serverTimestamp(),
-        isPrivate: isFacilitationAdd, // Private if added from facilitation tab
+        isPrivate: false,
         isDuplicate: !!duplicateType,
         duplicateType: duplicateType || null,
         duplicateCreatedAt: duplicateType === 'complete' ? new Date().toISOString() : null,
