@@ -336,7 +336,15 @@ const MentorDashboard = () => {
                   {paginatedDevotees.map((d) => (
                     <tr key={d.id} className="hover:bg-stone-50/50 transition-colors group">
                       <td className="py-4 px-4">
-                        <p className="font-bold font-serif text-stone-800">{d.name}</p>
+                        <p className="font-bold font-serif text-stone-800 flex items-center gap-2">
+                          {d.duplicateType === 'complete' && !d.duplicateHandled && (
+                            <span
+                              title="Another sevak also added this devotee. Awaiting owner assignment."
+                              className="w-2 h-2 bg-red-500 rounded-full shrink-0 animate-pulse"
+                            />
+                          )}
+                          {d.name}
+                        </p>
                         <p className="text-[10px] font-black text-stone-300 uppercase">Mentor: {d.mentor || 'None'}</p>
                       </td>
                       <td className="py-4 px-4 text-stone-600 text-sm font-medium">

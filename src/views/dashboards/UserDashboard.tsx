@@ -660,8 +660,22 @@ const UserDashboard = () => {
                 }
               }}
             >
-              {recentAdditions.slice(0, displayFacilitationLimit).map((d) => (
-                <div key={d.id} className="bg-white border border-stone-200 rounded-3xl p-6 shadow-sm space-y-5 hover:border-saffron/20 transition-all group">
+              {recentAdditions.slice(0, displayFacilitationLimit).map((d) => {
+                const hasUnresolvedConflict = d.duplicateType === 'complete' && !d.duplicateHandled;
+                return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    "bg-white border rounded-3xl p-6 shadow-sm space-y-5 transition-all group relative",
+                    hasUnresolvedConflict ? "border-red-300 ring-1 ring-red-100" : "border-stone-200 hover:border-saffron/20"
+                  )}
+                >
+                  {hasUnresolvedConflict && (
+                    <div
+                      title="Another sevak also added this devotee. Awaiting owner assignment."
+                      className="absolute -top-2 -left-2 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"
+                    />
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col items-start gap-1">
                       <button 
@@ -671,6 +685,7 @@ const UserDashboard = () => {
                         <p className={cn("font-bold font-serif text-stone-800 text-lg leading-tight transition-colors", !d.isPrivate && "hover:text-saffron")}>
                           {d.name}
                           {d.isPrivate && <span className="ml-2 text-[8px] bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded font-black tracking-widest uppercase align-middle">Facil-Only</span>}
+                          {hasUnresolvedConflict && <span className="ml-2 text-[8px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-black tracking-widest uppercase align-middle">Duplicate Conflict</span>}
                         </p>
                       </button>
                       <ContactLink contact={d.contact} className="text-xs text-stone-500 hover:text-saffron transition-colors cursor-pointer inline-flex">
@@ -753,7 +768,7 @@ const UserDashboard = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+              );})}
               {recentAdditions.length === 0 && (
                 <div className="py-24 border-2 border-dashed border-stone-100 rounded-3xl flex flex-col items-center justify-center text-stone-300">
                   <Heart size={48} className="opacity-10 mb-4" />

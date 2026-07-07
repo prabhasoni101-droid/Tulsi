@@ -210,6 +210,24 @@ service cloud.firestore {
       allow update, delete: if isOwner() && sameTemple(resource.data.templeId);
     }
 
+    // ── Duplicate facilitation conflicts ────────────────────────────────────────
+    // Any signed-in temple member can read/create conflict docs (needed so
+    // that whichever mentor/user's onSnapshot listener first notices a
+    // cross-facilitator duplicate can write the shared notification doc).
+    // Updating the candidate list while still pending is allowed for any
+    // mentor in the temple (keeps the notification current if a third
+    // facilitator adds the same devotee), but only the owner can actually
+    // resolve a conflict (flip status to 'resolved'), since that is what
+    // reassigns/removes devotee records.
+    match /conflictAssignments/{conflictId} {
+      allow read: if isSignedIn() && sameTemple(resource.data.templeId);
+      allow create: if isSignedIn() && isMentor() && incoming().templeId == userTempleId();
+      allow update: if isSignedIn() && sameTemple(resource.data.templeId) && (
+        isOwner()
+        || (isMentor() && resource.data.status == 'pending' && incoming().status == 'pending')
+      );
+    }
+
     // ── Temples / history ──────────────────────────────────────────────────────
     match /temples/{templeId} {
       allow read: if isSignedIn() && userTempleId() == templeId;
