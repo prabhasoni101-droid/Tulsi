@@ -616,7 +616,8 @@ const AttendanceSheet = () => {
                 createdBy: profile.uid,
                 templeId: profile.templeId,
                 createdAt: new Date().toISOString(),
-                isAttendanceOpen: false
+                isAttendanceOpen: true,
+                isDeleted: false
               });
               eventTitleToId.set(key, evRef.id);
               newEventOps++;
@@ -703,7 +704,11 @@ const AttendanceSheet = () => {
                 devoteeName: rawName, devoteeContact: normContact,
                 status: 'COMPLETED', response: 'NOT_COMING', updatedAt: new Date().toISOString()
               });
-              opCount++;
+              batch.set(doc(db, `events/${eventId}/attendance`, devoteeId!), {
+                devoteeId, name: rawName, contact: normContact, present: false,
+                markedAt: new Date().toISOString(), markedBy: profile.uid, templeId: profile.templeId
+              });
+              opCount += 2;
               absentCount++;
             });
 
