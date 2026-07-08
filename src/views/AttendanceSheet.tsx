@@ -559,6 +559,12 @@ const AttendanceSheet = () => {
     attendanceFileInputRef.current?.click();
   };
 
+  const isQuotaExceededError = (err: any) => {
+    const code = err?.code || '';
+    const message = (err?.message || '').toLowerCase();
+    return code === 'resource-exhausted' || message.includes('quota') || message.includes('resource-exhausted');
+  };
+
   const handleAttendanceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -624,7 +630,17 @@ const AttendanceSheet = () => {
               newEventOps++;
             }
           });
-          if (newEventOps > 0) await eventBatch.commit();
+          if (newEventOps > 0) {
+            try {
+              await eventBatch.commit();
+            } catch (err: any) {
+              if (isQuotaExceededError(err)) {
+                alert("Service temporarily unavailable. Please try again later.");
+                return;
+              }
+              throw err;
+            }
+          }
 
           // Lookup maps for Rule 1/2/3 devotee matching:
           // Rule 1: Name + Contact both match -> immediate match
@@ -670,7 +686,18 @@ const AttendanceSheet = () => {
           let batch = writeBatch(db);
           let opCount = 0;
           const flush = async () => {
-            if (opCount > 0) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
+            if (opCount > 0) {
+              try {
+                await batch.commit();
+              } catch (err: any) {
+                if (isQuotaExceededError(err)) {
+                  throw Object.assign(new Error('QUOTA_EXCEEDED'), { code: 'resource-exhausted' });
+                }
+                throw err;
+              }
+              batch = writeBatch(db);
+              opCount = 0;
+            }
           };
 
           for (const row of rows) {
@@ -684,9 +711,13 @@ const AttendanceSheet = () => {
             const presentCols: string[] = [];
             const absentCols: string[] = [];
             eventCols.forEach(col => {
-              const cell = (row[col] ?? '').toString().trim().toUpperCase();
+              const rawCell = (row[col] ?? '').toString().trim();
+              const cell = rawCell.toUpperCase();
               if (cell === 'P' || cell === 'PRESENT') presentCols.push(col);
               else if (cell === 'A' || cell === 'ABSENT') absentCols.push(col);
+              // Any other value (blank, random text, numbers, stray characters)
+              // does not satisfy the P/A/Present/Absent criteria, so it is
+              // intentionally skipped and that cell is left blank.
             });
             if (presentCols.length === 0 && absentCols.length === 0) continue;
 
@@ -750,17 +781,27 @@ const AttendanceSheet = () => {
           await flush();
 
           alert(`Attendance import complete. Present: ${presentCount}, Absent: ${absentCount}, New devotees added: ${newDevoteeCount}.`);
-        } catch (err) {
+        } catch (err: any) {
           console.error("Attendance CSV upload failed:", err);
-          alert("Failed to process the attendance CSV file.");
+          if (isQuotaExceededError(err)) {
+            alert("Service temporarily unavailable. Please try again later.");
+          } else {
+            alert("Failed to process the attendance CSV file.");
+          }
         } finally {
           setUploadingAttendance(false);
           if (e.target) e.target.value = '';
         }
       },
-      error: (err) => {
+      error: (err: any) => {
         console.error(err);
-        alert("Failed to parse the CSV file.");
+        if (isQuotaExceededError(err)) {
+          alert("Service temporarily unavailable. Please try again later.");
+        } else {
+          alert("Failed to parse the CSV file.");
+        }
+        setUploadingAttendance(false);
+        if (e.target) e.target.value = '';
       }
     });
   };
