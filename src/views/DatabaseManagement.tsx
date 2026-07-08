@@ -2512,9 +2512,13 @@ const DatabaseManagement: React.FC = () => {
 
               const matchUserByName = (val: string) => {
                 const v = val.trim().toLowerCase();
+                if (!v) return undefined;
+                const asEmail = v.includes('@') ? v : `${v}@iskcon.app`;
                 return templeUsers.find((u: any) =>
+                  (u.email || '').trim().toLowerCase() === v ||
+                  (u.email || '').trim().toLowerCase() === asEmail ||
                   (u.displayName || '').trim().toLowerCase() === v ||
-                  (u.email || '').trim().toLowerCase() === v
+                  u.uid === val.trim()
                 );
               };
 
