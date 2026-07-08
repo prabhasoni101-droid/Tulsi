@@ -2506,12 +2506,37 @@ const DatabaseManagement: React.FC = () => {
 
               // Map other base fields to Firestore fields
               const age = getVal(['Age']);
-              const mentor = getVal(['Mentor']);
+              const mentorRaw = getVal(['Mentor']);
+              const facilitatorRaw = getVal(['Facilitator']);
               const chanting = getVal(['Chanting']);
-              
+
+              const matchUserByName = (val: string) => {
+                const v = val.trim().toLowerCase();
+                return templeUsers.find((u: any) =>
+                  (u.displayName || '').trim().toLowerCase() === v ||
+                  (u.email || '').trim().toLowerCase() === v
+                );
+              };
+
               if (age !== undefined) mappedData.age = age;
-              if (mentor !== undefined) mappedData.mentor = mentor;
               if (chanting !== undefined) mappedData.chanting = chanting;
+
+              if (mentorRaw !== undefined && mentorRaw !== '') {
+                const mentorUser = matchUserByName(mentorRaw.toString());
+                mappedData.mentor = mentorUser ? (mentorUser.displayName || mentorUser.email) : mentorRaw;
+              }
+
+              if (facilitatorRaw !== undefined && facilitatorRaw !== '') {
+                const facilitatorUser = matchUserByName(facilitatorRaw.toString());
+                if (facilitatorUser) {
+                  mappedData.facilitatorId = facilitatorUser.uid;
+                  mappedData.facilitatorName = facilitatorUser.displayName || facilitatorUser.email;
+                  mappedData.facilitator = facilitatorUser.displayName || facilitatorUser.email;
+                } else {
+                  mappedData.facilitatorName = facilitatorRaw;
+                  mappedData.facilitator = facilitatorRaw;
+                }
+              }
 
               // Map custom columns (owner-created)
               customColumns.forEach(cc => {
