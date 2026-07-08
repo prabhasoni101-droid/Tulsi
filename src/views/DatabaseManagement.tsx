@@ -2509,6 +2509,7 @@ const DatabaseManagement: React.FC = () => {
               const mentorRaw = getVal(['Mentor']);
               const facilitatorRaw = getVal(['Facilitator']);
               const chanting = getVal(['Chanting']);
+              const attendanceRaw = getVal(['Attendance']);
 
               const matchUserByName = (val: string) => {
                 const v = val.trim().toLowerCase();
@@ -2524,6 +2525,12 @@ const DatabaseManagement: React.FC = () => {
 
               if (age !== undefined) mappedData.age = age;
               if (chanting !== undefined) mappedData.chanting = chanting;
+
+              if (attendanceRaw !== undefined && attendanceRaw !== '') {
+                const match = attendanceRaw.toString().match(/-?\d+(\.\d+)?/);
+                const parsedAttendance = match ? parseFloat(match[0]) : NaN;
+                if (!isNaN(parsedAttendance)) mappedData.attendanceCount = parsedAttendance;
+              }
 
               if (mentorRaw !== undefined && mentorRaw !== '') {
                 const mentorUser = matchUserByName(mentorRaw.toString());
