@@ -99,6 +99,7 @@ export interface Event {
   isDeleted?: boolean;
   deletedAt?: string;
   originalEventId?: string;
+  importedFromCsv?: boolean;
 }
 
 export interface CallingAssignment {

@@ -1430,11 +1430,12 @@ const DatabaseManagement: React.FC = () => {
     if (profile?.templeId) {
       const q = query(
         collection(db, 'events'), 
-        where('templeId', '==', profile.templeId),
-        where('isDeleted', '==', false)
+        where('templeId', '==', profile.templeId)
       );
       const unsub = onSnapshot(q, s => {
-          const evts = s.docs.map(d => ({id: d.id, ...d.data()}) as Event);
+          const evts = s.docs
+            .map(d => ({id: d.id, ...d.data()}) as Event)
+            .filter(e => !e.isDeleted || (e as any).importedFromCsv);
           evts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           setDbAttendanceEvents(evts);
           

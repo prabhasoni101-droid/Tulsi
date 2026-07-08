@@ -230,7 +230,7 @@ const AttendanceSheet = () => {
   const activeEvents = React.useMemo(() => {
     const now = new Date();
     return filteredEvents.filter(e => {
-      if ((e as any).isDeleted) return false;
+      if ((e as any).isDeleted || (e as any).importedFromCsv) return false;
       const date = new Date(e.date);
       const diffHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
       const isStaticHistory = !(e as any).isAttendanceOpen && diffHours > 24;
@@ -241,7 +241,7 @@ const AttendanceSheet = () => {
   const vaultEvents = React.useMemo(() => {
     const now = new Date();
     return filteredEvents.filter(e => {
-      if ((e as any).isDeleted) return false;
+      if ((e as any).isDeleted || (e as any).importedFromCsv) return false;
       const date = new Date(e.date);
       const diffHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
       const isStaticHistory = !(e as any).isAttendanceOpen && diffHours > 24;
@@ -250,7 +250,7 @@ const AttendanceSheet = () => {
   }, [filteredEvents]);
 
   const historyEvents = React.useMemo(() => {
-    return filteredEvents.filter(e => !!(e as any).isDeleted || !!(e as any).isArchived)
+    return filteredEvents.filter(e => !!(e as any).isDeleted || !!(e as any).isArchived || !!(e as any).importedFromCsv)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [filteredEvents]);
 
@@ -598,9 +598,6 @@ const AttendanceSheet = () => {
           }
 
           // Resolve or create an event for every event column (title = column header)
-          const eventTitleToId = new Map<string, string>();
-          events.forEach(ev => { if (ev.title) eventTitleToId.set(ev.title.trim().toLowerCase(), ev.id!); });
-
           const eventBatch = writeBatch(db);
           let newEventOps = 0;
           eventCols.forEach(col => {
@@ -616,8 +613,9 @@ const AttendanceSheet = () => {
                 createdBy: profile.uid,
                 templeId: profile.templeId,
                 createdAt: new Date().toISOString(),
-                isAttendanceOpen: true,
-                isDeleted: false
+                isAttendanceOpen: false,
+                isDeleted: false,
+                importedFromCsv: true
               });
               eventTitleToId.set(key, evRef.id);
               newEventOps++;
@@ -625,15 +623,45 @@ const AttendanceSheet = () => {
           });
           if (newEventOps > 0) await eventBatch.commit();
 
-          // Lookup maps for matching devotees by contact and by name+contact
-          const byContact = new Map<string, string>();
+          // Lookup maps for Rule 1/2/3 devotee matching:
+          // Rule 1: Name + Contact both match -> immediate match
+          // Rule 2: Name is ambiguous (shared by multiple devotees) -> match by Contact
+          // Rule 3: Contact is ambiguous (shared by multiple devotees) -> match by Name
           const byNameContact = new Map<string, string>();
+          const byContact = new Map<string, string[]>();
+          const byName = new Map<string, string[]>();
           devotees.forEach(d => {
             const n = (d.name || '').trim().toLowerCase();
             const c = normalizePhoneNumber(d.contact || '');
-            if (c) byContact.set(c, d.id!);
-            byNameContact.set(`${n}_${c}`, d.id!);
+            if (n && c) byNameContact.set(`${n}_${c}`, d.id!);
+            if (c) byContact.set(c, [...(byContact.get(c) || []), d.id!]);
+            if (n) byName.set(n, [...(byName.get(n) || []), d.id!]);
           });
+
+          const resolveDevoteeId = (rawName: string, normContact: string): string | undefined => {
+            const n = rawName.trim().toLowerCase();
+            const c = normContact;
+            const compositeKey = `${n}_${c}`;
+            // Rule 1
+            if (n && c && byNameContact.has(compositeKey)) return byNameContact.get(compositeKey);
+            // Rule 2: multiple devotees share this name -> disambiguate via contact
+            const nameMatches = byName.get(n) || [];
+            if (nameMatches.length > 1 && c) {
+              const contactMatches = byContact.get(c) || [];
+              const overlap = contactMatches.find(id => nameMatches.includes(id));
+              if (overlap) return overlap;
+            }
+            // Rule 3: multiple devotees share this contact -> disambiguate via name
+            const contactMatches = byContact.get(c) || [];
+            if (contactMatches.length > 1 && n) {
+              const overlap = contactMatches.find(id => (byName.get(n) || []).includes(id));
+              if (overlap) return overlap;
+            }
+            // Single unambiguous match on contact or name alone
+            if (contactMatches.length === 1) return contactMatches[0];
+            if (nameMatches.length === 1) return nameMatches[0];
+            return undefined;
+          };
 
           let presentCount = 0, absentCount = 0, newDevoteeCount = 0;
           let batch = writeBatch(db);
@@ -659,7 +687,7 @@ const AttendanceSheet = () => {
             });
             if (presentCols.length === 0 && absentCols.length === 0) continue;
 
-            let devoteeId = (normContact && byContact.get(normContact)) || byNameContact.get(compositeKey);
+            let devoteeId = resolveDevoteeId(rawName, normContact);
             const isNewDevotee = !devoteeId;
             if (!devoteeId) {
               devoteeId = doc(collection(db, 'devotees')).id;
@@ -675,7 +703,9 @@ const AttendanceSheet = () => {
                 createdAt: new Date().toISOString()
               });
               opCount++;
-              if (normContact) byContact.set(normContact, devoteeId);
+              const n = rawName.trim().toLowerCase();
+              if (normContact) byContact.set(normContact, [...(byContact.get(normContact) || []), devoteeId]);
+              if (n) byName.set(n, [...(byName.get(n) || []), devoteeId]);
               byNameContact.set(compositeKey, devoteeId);
               newDevoteeCount++;
             } else if (presentCols.length > 0) {
