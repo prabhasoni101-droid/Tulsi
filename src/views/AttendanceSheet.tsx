@@ -598,6 +598,9 @@ const AttendanceSheet = () => {
           }
 
           // Resolve or create an event for every event column (title = column header)
+          const eventTitleToId = new Map<string, string>();
+          events.forEach(ev => { if (ev.title) eventTitleToId.set(ev.title.trim().toLowerCase(), ev.id!); });
+
           const eventBatch = writeBatch(db);
           let newEventOps = 0;
           eventCols.forEach(col => {
