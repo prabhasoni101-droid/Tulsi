@@ -2550,7 +2550,7 @@ const DatabaseManagement: React.FC = () => {
 
               const existingDb = existingMap.get(key);
 
-              if (existingDb && autoDeduplicateOnImport) {
+              if (existingDb) {
                 // Update mode: fill in information for existing records if currently empty
                 const updateObj: any = {};
                 const oldValues: Record<string, any> = {};
@@ -2576,7 +2576,7 @@ const DatabaseManagement: React.FC = () => {
                     newValues: updateObj
                   });
                 }
-              } else if (seenInImportLocally.has(key) && autoDeduplicateOnImport) {
+              } else if (seenInImportLocally.has(key)) {
                 // Skip duplicate within the same CSV file if protection is ON
                 return;
               } else {
