@@ -31,6 +31,7 @@ import {
   User
 } from 'lucide-react';
 import { cn, getPublicAttendanceUrl, normalizePhoneNumber } from '../lib/utils';
+import { detectColumns, runAttendanceImport, ImportReport } from '../lib/attendanceImportEngine';
 import ContactLink from '../components/ContactLink';
 import { useAuth } from '../context/AuthContext';
 import { jsPDF } from 'jspdf';
@@ -217,6 +218,7 @@ const AttendanceSheet = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, title: string } | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [uploadingAttendance, setUploadingAttendance] = useState(false);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const attendanceFileInputRef = React.useRef<HTMLInputElement>(null);
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -587,200 +589,30 @@ const AttendanceSheet = () => {
           }
 
           const headers = Object.keys(rows[0]);
-          const nameAliases = ['name', 'devotee name', 'devotee', 'नाम'];
-          const contactAliases = ['contact', 'contact no.', 'contact no', 'mobile', 'phone', 'ph no.', 'संपर्क', 'फोन', 'मोबाइल'];
-          const nameKey = headers.find(h => nameAliases.includes(h.trim().toLowerCase()));
-          const contactKey = headers.find(h => contactAliases.includes(h.trim().toLowerCase()));
+          const { nameKey, contactKey, attendanceCols } = detectColumns(rows, headers);
 
           if (!nameKey || !contactKey) {
             alert('Could not find "Name" and "Contact" columns in the uploaded file.');
             return;
           }
 
-          const eventCols = headers.filter(h => h !== nameKey && h !== contactKey);
-          if (eventCols.length === 0) {
-            alert("No event columns were found in the uploaded file.");
+          if (attendanceCols.length === 0) {
+            alert("No attendance columns were detected (expected values like P/Present or A/Absent).");
             return;
           }
 
-          // Resolve or create an event for every event column (title = column header)
-          const eventTitleToId = new Map<string, string>();
-          events.forEach(ev => { if (ev.title) eventTitleToId.set(ev.title.trim().toLowerCase(), ev.id!); });
-
-          const eventBatch = writeBatch(db);
-          let newEventOps = 0;
-          eventCols.forEach(col => {
-            const key = col.trim().toLowerCase();
-            if (!eventTitleToId.has(key)) {
-              const evRef = doc(collection(db, 'events'));
-              eventBatch.set(evRef, {
-                title: col.trim(),
-                date: new Date().toISOString(),
-                description: 'Imported from attendance CSV upload.',
-                mediaUrl: '',
-                isPublic: false,
-                createdBy: profile.uid,
-                templeId: profile.templeId,
-                createdAt: new Date().toISOString(),
-                isAttendanceOpen: false,
-                isDeleted: false,
-                importedFromCsv: true
-              });
-              eventTitleToId.set(key, evRef.id);
-              newEventOps++;
-            }
-          });
-          if (newEventOps > 0) {
-            try {
-              await eventBatch.commit();
-            } catch (err: any) {
-              if (isQuotaExceededError(err)) {
-                alert("Service temporarily unavailable. Please try again later.");
-                return;
-              }
-              throw err;
-            }
-          }
-
-          // Lookup maps for Rule 1/2/3 devotee matching:
-          // Rule 1: Name + Contact both match -> immediate match
-          // Rule 2: Name is ambiguous (shared by multiple devotees) -> match by Contact
-          // Rule 3: Contact is ambiguous (shared by multiple devotees) -> match by Name
-          const byNameContact = new Map<string, string>();
-          const byContact = new Map<string, string[]>();
-          const byName = new Map<string, string[]>();
-          devotees.forEach(d => {
-            const n = (d.name || '').trim().toLowerCase();
-            const c = normalizePhoneNumber(d.contact || '');
-            if (n && c) byNameContact.set(`${n}_${c}`, d.id!);
-            if (c) byContact.set(c, [...(byContact.get(c) || []), d.id!]);
-            if (n) byName.set(n, [...(byName.get(n) || []), d.id!]);
+          const report = await runAttendanceImport({
+            rows,
+            nameKey,
+            contactKey,
+            attendanceCols,
+            existingEvents: events,
+            devotees,
+            templeId: profile.templeId,
+            userId: profile.uid
           });
 
-          const resolveDevoteeId = (rawName: string, normContact: string): string | undefined => {
-            const n = rawName.trim().toLowerCase();
-            const c = normContact;
-            const compositeKey = `${n}_${c}`;
-            // Rule 1
-            if (n && c && byNameContact.has(compositeKey)) return byNameContact.get(compositeKey);
-            // Rule 2: multiple devotees share this name -> disambiguate via contact
-            const nameMatches = byName.get(n) || [];
-            if (nameMatches.length > 1 && c) {
-              const contactMatches = byContact.get(c) || [];
-              const overlap = contactMatches.find(id => nameMatches.includes(id));
-              if (overlap) return overlap;
-            }
-            // Rule 3: multiple devotees share this contact -> disambiguate via name
-            const contactMatches = byContact.get(c) || [];
-            if (contactMatches.length > 1 && n) {
-              const overlap = contactMatches.find(id => (byName.get(n) || []).includes(id));
-              if (overlap) return overlap;
-            }
-            // Single unambiguous match on contact or name alone
-            if (contactMatches.length === 1) return contactMatches[0];
-            if (nameMatches.length === 1) return nameMatches[0];
-            return undefined;
-          };
-
-          let presentCount = 0, absentCount = 0, newDevoteeCount = 0;
-          let batch = writeBatch(db);
-          let opCount = 0;
-          const flush = async () => {
-            if (opCount > 0) {
-              try {
-                await batch.commit();
-              } catch (err: any) {
-                if (isQuotaExceededError(err)) {
-                  throw Object.assign(new Error('QUOTA_EXCEEDED'), { code: 'resource-exhausted' });
-                }
-                throw err;
-              }
-              batch = writeBatch(db);
-              opCount = 0;
-            }
-          };
-
-          for (const row of rows) {
-            const rawName = (row[nameKey] || '').toString().trim();
-            const rawContact = (row[contactKey] || '').toString().trim();
-            if (!rawName && !rawContact) continue;
-
-            const normContact = normalizePhoneNumber(rawContact);
-            const compositeKey = `${rawName.toLowerCase()}_${normContact}`;
-
-            const presentCols: string[] = [];
-            const absentCols: string[] = [];
-            eventCols.forEach(col => {
-              const rawCell = (row[col] ?? '').toString().trim();
-              const cell = rawCell.toUpperCase();
-              if (cell === 'P' || cell === 'PRESENT') presentCols.push(col);
-              else if (cell === 'A' || cell === 'ABSENT') absentCols.push(col);
-              // Any other value (blank, random text, numbers, stray characters)
-              // does not satisfy the P/A/Present/Absent criteria, so it is
-              // intentionally skipped and that cell is left blank.
-            });
-            if (presentCols.length === 0 && absentCols.length === 0) continue;
-
-            let devoteeId = resolveDevoteeId(rawName, normContact);
-            const isNewDevotee = !devoteeId;
-            if (!devoteeId) {
-              devoteeId = doc(collection(db, 'devotees')).id;
-              batch.set(doc(db, 'devotees', devoteeId), {
-                name: rawName || 'Unknown',
-                contact: normContact,
-                mentor: '',
-                chanting: '0',
-                attendanceCount: presentCols.length,
-                templeId: profile.templeId,
-                isDeleted: false,
-                isImported: true,
-                createdAt: new Date().toISOString()
-              });
-              opCount++;
-              const n = rawName.trim().toLowerCase();
-              if (normContact) byContact.set(normContact, [...(byContact.get(normContact) || []), devoteeId]);
-              if (n) byName.set(n, [...(byName.get(n) || []), devoteeId]);
-              byNameContact.set(compositeKey, devoteeId);
-              newDevoteeCount++;
-            } else if (presentCols.length > 0) {
-              batch.update(doc(db, 'devotees', devoteeId), { attendanceCount: increment(presentCols.length) });
-              opCount++;
-            }
-
-            presentCols.forEach(col => {
-              const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
-              batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
-                eventId, devoteeId, userId: profile.uid,
-                devoteeName: rawName, devoteeContact: normContact,
-                status: 'COMPLETED', response: 'COMING', updatedAt: new Date().toISOString()
-              });
-              batch.set(doc(db, `events/${eventId}/attendance`, devoteeId!), {
-                devoteeId, name: rawName, contact: normContact, present: true,
-                markedAt: new Date().toISOString(), markedBy: profile.uid, templeId: profile.templeId
-              });
-              opCount += 2;
-              presentCount++;
-            });
-            absentCols.forEach(col => {
-              const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
-              batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
-                eventId, devoteeId, userId: profile.uid,
-                devoteeName: rawName, devoteeContact: normContact,
-                status: 'COMPLETED', response: 'NOT_COMING', updatedAt: new Date().toISOString()
-              });
-              batch.set(doc(db, `events/${eventId}/attendance`, devoteeId!), {
-                devoteeId, name: rawName, contact: normContact, present: false,
-                markedAt: new Date().toISOString(), markedBy: profile.uid, templeId: profile.templeId
-              });
-              opCount += 2;
-              absentCount++;
-            });
-
-            if (opCount >= 400) await flush();
-          }
-          await flush();
-
-          alert(`Attendance import complete. Present: ${presentCount}, Absent: ${absentCount}, New devotees added: ${newDevoteeCount}.`);
+          setImportReport(report);
         } catch (err: any) {
           console.error("Attendance CSV upload failed:", err);
           if (isQuotaExceededError(err)) {
@@ -1318,6 +1150,90 @@ const AttendanceSheet = () => {
                 className="w-full py-4 bg-stone-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-stone-200 hover:-translate-y-0.5 active:translate-y-0"
               >
                 Copy & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    {importReport && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 text-center">
+          <div className="bg-white rounded-[40px] p-10 max-w-lg w-full shadow-2xl relative animate-in zoom-in-95 duration-300 border border-stone-100 max-h-[85vh] overflow-y-auto">
+            <button
+              onClick={() => setImportReport(null)}
+              className="absolute top-8 right-8 p-2 text-stone-400 hover:text-stone-600 transition-colors"
+            >
+              <X size={24} />
+            </button>
+            <div className="space-y-6 text-left">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-stone-800">Import Report</h3>
+                <p className="text-stone-500 text-sm mt-2">{importReport.totalRows} row(s) processed.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Imported</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.imported}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Skipped</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.skipped}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Duplicates</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.duplicates}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Conflicts</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.conflicts.length}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">New Devotees</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.newDevotees}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Events Created</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.eventsCreated.length}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Present</p>
+                  <p className="text-2xl font-bold text-green-600">{importReport.presentCount}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Absent</p>
+                  <p className="text-2xl font-bold text-red-500">{importReport.absentCount}</p>
+                </div>
+              </div>
+
+              {importReport.eventsCreated.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2">Events Created</p>
+                  <div className="flex flex-wrap gap-2">
+                    {importReport.eventsCreated.map(title => (
+                      <span key={title} className="px-3 py-1 bg-orange-50 text-saffron rounded-full text-xs font-bold">{title}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {importReport.conflicts.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2">Conflicts (not auto-assigned)</p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {importReport.conflicts.map((c, i) => (
+                      <div key={i} className="bg-red-50 rounded-xl p-3 text-xs">
+                        <p className="font-bold text-stone-700">Row {c.row}: {c.name || '(no name)'} {c.contact ? `— ${c.contact}` : ''}</p>
+                        <p className="text-stone-500 mt-1">{c.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => setImportReport(null)}
+                className="w-full py-4 bg-stone-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-stone-200"
+              >
+                Close
               </button>
             </div>
           </div>
