@@ -286,13 +286,32 @@ const EventDetail = () => {
 
   const handleBulkAssign = async () => {
     if (!selectedUserId || selectedDevotees.length === 0 || !id) return;
-    
+
+    // Re-validate against the latest live `assignments` state at the moment
+    // of commit (not just when the picker list was rendered) so a devotee
+    // who became assigned to someone else while this modal was open can
+    // never be double-assigned.
+    const alreadyAssignedIds = new Set(assignments.map(a => a.devoteeId));
+    const devoteesToAssign = selectedDevotees.filter(devId => !alreadyAssignedIds.has(devId));
+
+    if (devoteesToAssign.length === 0) {
+      setIsAssigning(false);
+      setSelectedDevotees([]);
+      setSelectedUserId(null);
+      return;
+    }
+
     const batch = writeBatch(db);
-    selectedDevotees.forEach(devId => {
+    devoteesToAssign.forEach(devId => {
       const devotee = devotees.find(d => d.id === devId);
       if (!devotee) return;
-      
-      const assignRef = doc(collection(db, `events/${id}/assignments`));
+
+      // Keying the assignment document by devoteeId (instead of a random
+      // auto-id) makes it structurally impossible for the same devotee to
+      // ever have two assignment documents in this event: any concurrent
+      // or repeated assignment attempt resolves to the same document
+      // instead of creating a duplicate.
+      const assignRef = doc(db, `events/${id}/assignments`, devId);
       batch.set(assignRef, {
         eventId: id,
         devoteeId: devId,

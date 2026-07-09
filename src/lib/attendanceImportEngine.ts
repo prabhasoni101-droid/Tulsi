@@ -316,7 +316,7 @@ export async function runAttendanceImport(params: RunImportParams): Promise<Impo
 
       presentCols.forEach(col => {
         const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
-        batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
+        batch.set(doc(db, `events/${eventId}/assignments`, devoteeId), {
           eventId, devoteeId, userId,
           devoteeName: rawName, devoteeContact: normContact,
           status: 'COMPLETED', response: 'COMING', updatedAt: new Date().toISOString()
@@ -332,7 +332,7 @@ export async function runAttendanceImport(params: RunImportParams): Promise<Impo
 
       absentCols.forEach(col => {
         const eventId = eventTitleToId.get(col.trim().toLowerCase())!;
-        batch.set(doc(collection(db, `events/${eventId}/assignments`)), {
+        batch.set(doc(db, `events/${eventId}/assignments`, devoteeId), {
           eventId, devoteeId, userId,
           devoteeName: rawName, devoteeContact: normContact,
           status: 'COMPLETED', response: 'NOT_COMING', updatedAt: new Date().toISOString()

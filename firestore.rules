@@ -174,7 +174,15 @@ service cloud.firestore {
         allow read: if isSignedIn() && sameTemple(eventDoc(eventId).data.templeId)
           || eventDoc(eventId).data.isPublic == true;
         allow list: if isSignedIn() && sameTemple(eventDoc(eventId).data.templeId);
-        allow write: if isSignedIn() && isMentor()
+        // The assignment document id must equal its own devoteeId field.
+        // Combined with the client always writing to doc(devoteeId), this
+        // makes it structurally impossible for a devotee to ever end up
+        // with two assignment documents in the same event (a second
+        // "assignment" attempt just resolves to the same document).
+        allow create, update: if isSignedIn() && isMentor()
+          && sameTemple(eventDoc(eventId).data.templeId)
+          && (!incoming().keys().hasAny(['devoteeId']) || incoming().devoteeId == assignmentId);
+        allow delete: if isSignedIn() && isMentor()
           && sameTemple(eventDoc(eventId).data.templeId);
       }
 
