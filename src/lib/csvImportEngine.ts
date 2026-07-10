@@ -26,6 +26,7 @@ export interface DbImportResult {
   report: DbImportReport;
   addedData: Record<string, any>;
   updatedData: { id: string; oldValues: Record<string, any>; newValues: Record<string, any> }[];
+  autoDetectedColumns: string[];
 }
 
 const NAME_ALIASES = ['name', 'devotee name', 'devotee'];
@@ -35,7 +36,21 @@ const MENTOR_ALIASES = ['mentor'];
 const FACILITATOR_ALIASES = ['facilitator'];
 const CHANTING_ALIASES = ['chanting'];
 const ATTENDANCE_ALIASES = ['attendance'];
+const GENDER_ALIASES = ['gender'];
+const DOB_ALIASES = ['date of birth', 'dob'];
+const ADDRESS_ALIASES = ['address'];
+const INSTITUTE_ALIASES = ['institute'];
 
+// Every built-in (non-custom) database column and the exact Devotee field
+// it must be written to. Kept in sync with the display/edit mapping used
+// elsewhere in DatabaseManagement.tsx (Name/Contact/Age/Mentor/Facilitator/
+// Chanting/Attendance are handled separately above with their own logic).
+const BASE_FIELD_ALIASES: { field: string; aliases: string[] }[] = [
+  { field: 'gender', aliases: GENDER_ALIASES },
+  { field: 'dob', aliases: DOB_ALIASES },
+  { field: 'address', aliases: ADDRESS_ALIASES },
+  { field: 'institute', aliases: INSTITUTE_ALIASES }
+];
 const BATCH_LIMIT = 450;
 // Yield back to the browser after this many rows of pure JS mapping work,
 // so a 15k-row import never blocks the main thread long enough to freeze
@@ -150,7 +165,7 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
   };
 
   if (rows.length === 0) {
-    return { report: report_(), addedData, updatedData };
+    return { report: report_(), addedData, updatedData, autoDetectedColumns: [] };
   }
 
   onProgress?.({ step: 'Indexing existing records', processed: 0, total: rows.length, percent: 0, etaSeconds: null });
@@ -168,6 +183,23 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
   const headers = Object.keys(rows[0] || {});
   const headerIndex = buildHeaderIndex(headers);
   const customColumnKeys = customColumns.map(cc => ({ cc, hKey: headerIndex.get(cc.trim().toLowerCase()) }));
+
+  // Any CSV header that isn't Name/Contact, isn't a known base field, and
+  // isn't already a registered custom column is a brand-new column the
+  // user just added to their file. Auto-detect it so its values still get
+  // written on this very import (instead of silently dropping the data
+  // until someone manually registers the column in the app first).
+  const recognizedKeys = new Set<string>([
+    ...NAME_ALIASES, ...CONTACT_ALIASES, ...AGE_ALIASES, ...MENTOR_ALIASES,
+    ...FACILITATOR_ALIASES, ...CHANTING_ALIASES, ...ATTENDANCE_ALIASES,
+    ...BASE_FIELD_ALIASES.flatMap(b => b.aliases),
+    ...customColumns.map(cc => cc.trim().toLowerCase())
+  ]);
+  const autoDetectedColumns = headers.filter(h => !recognizedKeys.has(h.trim().toLowerCase()));
+  const allCustomColumnKeys = [
+    ...customColumnKeys,
+    ...autoDetectedColumns.map(h => ({ cc: h.trim(), hKey: h }))
+  ];
 
   const seenInImportLocally = new Set<string>();
   let batch = writeBatch(db);
@@ -216,6 +248,11 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
       if (age !== undefined) mappedData.age = age;
       if (chanting !== undefined) mappedData.chanting = chanting;
 
+      BASE_FIELD_ALIASES.forEach(({ field, aliases }) => {
+        const val = getValFast(row, headerIndex, aliases);
+        if (val !== undefined) mappedData[field] = val;
+      });
+
       if (attendanceRaw !== undefined && attendanceRaw !== '') {
         const match = attendanceRaw.toString().match(/-?\d+(\.\d+)?/);
         const parsed = match ? parseFloat(match[0]) : NaN;
@@ -243,7 +280,7 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
         // (do not guess, do not blank out an existing valid assignment).
       }
 
-      customColumnKeys.forEach(({ cc, hKey }) => {
+      allCustomColumnKeys.forEach(({ cc, hKey }) => {
         if (hKey !== undefined && row[hKey] !== undefined) mappedData[cc] = row[hKey];
       });
 
@@ -320,5 +357,5 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
   onProgress?.({ step: 'Saving to database', processed: rows.length, total: rows.length, percent: 100, etaSeconds: 0 });
   await flush();
 
-  return { report: report_(), addedData, updatedData };
+  return { report: report_(), addedData, updatedData, autoDetectedColumns };
 }

@@ -2455,7 +2455,7 @@ const DatabaseManagement: React.FC = () => {
         setIsUploading(true);
         setImportProgress({ step: 'Parsing file', processed: 0, total: results.data.length, percent: 0, etaSeconds: null });
         try {
-          const { report, addedData, updatedData } = await runDatabaseImport({
+          const { report, addedData, updatedData, autoDetectedColumns } = await runDatabaseImport({
             rows: results.data as any[],
             devotees,
             templeUsers,
@@ -2463,6 +2463,22 @@ const DatabaseManagement: React.FC = () => {
             templeId: profile?.templeId || profile?.uid || '',
             onProgress: (p) => setImportProgress(p)
           });
+
+          if (autoDetectedColumns.length > 0) {
+            const updatedCustomColumns = [...customColumns, ...autoDetectedColumns];
+            setCustomColumns(updatedCustomColumns);
+            setColumnOrder(prev => {
+              const base = prev.length > 0 ? prev : allColumns;
+              const next = [...base];
+              autoDetectedColumns.forEach(col => { if (!next.includes(col)) next.push(col); });
+              return next;
+            });
+            if (profile?.templeId) {
+              await setDoc(doc(db, 'temples', profile.templeId), {
+                databaseConfig: { customColumns: updatedCustomColumns }
+              }, { merge: true });
+            }
+          }
 
           if (Object.keys(addedData).length > 0 || updatedData.length > 0) {
             recordActivity({ type: 'import', addedData, updatedData });
