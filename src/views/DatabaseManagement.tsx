@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { Devotee, Event } from '../types';
 import Layout from '../components/Layout';
 import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../lib/utils';
+import { runDatabaseImport, ImportProgress, DbImportReport } from '../lib/csvImportEngine';
 import Papa from 'papaparse';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -565,6 +566,8 @@ const DatabaseManagement: React.FC = () => {
   const [isWarningDismissed, setIsWarningDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [importReport, setImportReport] = useState<DbImportReport | null>(null);
 
   // New States for requested features
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -2450,176 +2453,28 @@ const DatabaseManagement: React.FC = () => {
       skipEmptyLines: true,
       complete: async (results) => {
         setIsUploading(true);
+        setImportProgress({ step: 'Parsing file', processed: 0, total: results.data.length, percent: 0, etaSeconds: null });
         try {
-          let importedCount = 0;
-          let updatedCount = 0;
-          
-          // existingMap for matching active devotees
-          const existingMap = new Map<string, Devotee>();
-          devotees.forEach(d => {
-            const name = (d.name || (d as any).Name || '').trim().toLowerCase();
-            const contact = normalizePhoneNumber(d.contact || (d as any)['Contact No.'] || '');
-            if (name || contact) {
-              const key = `${name}_${contact}`;
-              existingMap.set(key, d);
-            }
+          const { report, addedData, updatedData } = await runDatabaseImport({
+            rows: results.data as any[],
+            devotees,
+            templeUsers,
+            customColumns,
+            templeId: profile?.templeId || profile?.uid || '',
+            onProgress: (p) => setImportProgress(p)
           });
 
-          // Local set to track duplicates within the current CSV
-          const seenInImportLocally = new Set<string>();
-
-          const addedData: Record<string, any> = {};
-          const updatedData: { id: string, oldValues: Record<string, any>, newValues: Record<string, any> }[] = [];
-
-          const CHUNK_SIZE = 450;
-          for (let i = 0; i < results.data.length; i += CHUNK_SIZE) {
-            const chunk = results.data.slice(i, i + CHUNK_SIZE);
-            const batch = writeBatch(db);
-
-            chunk.forEach((row: any) => {
-              // Helper to find value from row case-insensitively
-              const getVal = (aliases: string[]) => {
-                const rowKeys = Object.keys(row);
-                for (const alias of aliases) {
-                  const match = rowKeys.find(rk => rk.trim().toLowerCase() === alias.toLowerCase());
-                  if (match) return row[match];
-                }
-                return undefined;
-              };
-
-              const rawName = getVal(['Name', 'Devotee Name', 'Devotee']) || '';
-              if (!rawName) return;
-              const name = rawName.toString().trim();
-              
-              const rawContact = getVal(['Contact No.', 'Contact', 'PhoneNo', 'Mobile', 'Phone', 'Ph No.']) || '';
-              const contact = normalizePhoneNumber(rawContact.toString());
-              
-              const key = `${name.toLowerCase()}_${contact}`;
-
-              // Prepare mapped data using the internal field names
-              const mappedData: any = {
-                name,
-                contact,
-                templeId: profile?.templeId || profile?.uid,
-                isDeleted: false
-              };
-
-              // Map other base fields to Firestore fields
-              const age = getVal(['Age']);
-              const mentorRaw = getVal(['Mentor']);
-              const facilitatorRaw = getVal(['Facilitator']);
-              const chanting = getVal(['Chanting']);
-              const attendanceRaw = getVal(['Attendance']);
-
-              const matchUserByName = (val: string) => {
-                const v = val.trim().toLowerCase();
-                if (!v) return undefined;
-                const asEmail = v.includes('@') ? v : `${v}@iskcon.app`;
-                return templeUsers.find((u: any) =>
-                  (u.email || '').trim().toLowerCase() === v ||
-                  (u.email || '').trim().toLowerCase() === asEmail ||
-                  (u.displayName || '').trim().toLowerCase() === v ||
-                  u.uid === val.trim()
-                );
-              };
-
-              if (age !== undefined) mappedData.age = age;
-              if (chanting !== undefined) mappedData.chanting = chanting;
-
-              if (attendanceRaw !== undefined && attendanceRaw !== '') {
-                const match = attendanceRaw.toString().match(/-?\d+(\.\d+)?/);
-                const parsedAttendance = match ? parseFloat(match[0]) : NaN;
-                if (!isNaN(parsedAttendance)) mappedData.attendanceCount = parsedAttendance;
-              }
-
-              if (mentorRaw !== undefined && mentorRaw !== '') {
-                const mentorUser = matchUserByName(mentorRaw.toString());
-                mappedData.mentor = mentorUser ? (mentorUser.displayName || mentorUser.email) : mentorRaw;
-              }
-
-              if (facilitatorRaw !== undefined && facilitatorRaw !== '') {
-                const facilitatorUser = matchUserByName(facilitatorRaw.toString());
-                if (facilitatorUser) {
-                  mappedData.facilitatorId = facilitatorUser.uid;
-                  mappedData.facilitatorName = facilitatorUser.displayName || facilitatorUser.email;
-                  mappedData.facilitator = facilitatorUser.displayName || facilitatorUser.email;
-                } else {
-                  mappedData.facilitatorName = facilitatorRaw;
-                  mappedData.facilitator = facilitatorRaw;
-                }
-              }
-
-              // Map custom columns (owner-created)
-              customColumns.forEach(cc => {
-                const val = getVal([cc]);
-                if (val !== undefined) mappedData[cc] = val;
-              });
-
-              const existingDb = existingMap.get(key);
-
-              if (existingDb) {
-                // Update mode: fill in information for existing records if currently empty
-                const updateObj: any = {};
-                const oldValues: Record<string, any> = {};
-                Object.keys(mappedData).forEach(field => {
-                  if (field === 'id' || field === 'templeId' || field === 'isDeleted') return;
-                  
-                  const incoming = mappedData[field];
-                  const current = (existingDb as any)[field];
-                  
-                  // Only update if current DB value is truly missing/empty and we have something new
-                  if ((current === undefined || current === null || current === '') && (incoming !== undefined && incoming !== null && incoming !== '')) {
-                    updateObj[field] = incoming;
-                    oldValues[field] = '';
-                  }
-                });
-
-                if (Object.keys(updateObj).length > 0) {
-                  batch.update(doc(db, 'devotees', existingDb.id!), updateObj);
-                  updatedCount++;
-                  updatedData.push({
-                    id: existingDb.id!,
-                    oldValues,
-                    newValues: updateObj
-                  });
-                }
-              } else if (seenInImportLocally.has(key)) {
-                // Skip duplicate within the same CSV file if protection is ON
-                return;
-              } else {
-                // New entry logic
-                const ref = doc(collection(db, 'devotees'));
-                const newDoc = {
-                  ...mappedData,
-                  isImported: true,
-                  createdAt: Date.now()
-                };
-                batch.set(ref, newDoc);
-                importedCount++;
-                seenInImportLocally.add(key);
-                addedData[ref.id] = newDoc;
-              }
-            });
-            
-            await batch.commit();
-            await new Promise(resolve => setTimeout(resolve, 150));
+          if (Object.keys(addedData).length > 0 || updatedData.length > 0) {
+            recordActivity({ type: 'import', addedData, updatedData });
           }
 
-          recordActivity({
-            type: 'import',
-            addedData,
-            updatedData
-          });
-
-          openAlert('Import Process Complete', 
-            `${importedCount} new devotee(s) added directly. ${updatedCount} existing entries were updated with missing column information from your file.`
-          );
+          setImportReport(report);
         } catch (error) {
           console.error("Upload error:", error);
           openAlert('Error', 'An error occurred during import.');
         } finally {
           setIsUploading(false);
-          // clear the file input
+          setImportProgress(null);
           if (e.target) {
             e.target.value = '';
           }
@@ -2628,6 +2483,8 @@ const DatabaseManagement: React.FC = () => {
       error: (err) => {
         console.error(err);
         openAlert('Error', 'Failed to parse CSV file.');
+        setIsUploading(false);
+        setImportProgress(null);
       }
     });
   };
@@ -3325,14 +3182,94 @@ const DatabaseManagement: React.FC = () => {
       )}
 
       {isUploading && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-stone-900/60 backdrop-blur-md">
-          <div className="flex flex-col items-center">
-            <h1 className="text-5xl md:text-7xl font-serif font-bold text-orange-500 animate-pulse tracking-tight">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-6">
+          <div className="flex flex-col items-center w-full max-w-md">
+            <h1 className="text-4xl md:text-6xl font-serif font-bold text-orange-500 tracking-tight">
               Radhe Radhe...
             </h1>
-            <p className="mt-6 text-white text-sm font-bold uppercase tracking-[0.3em] opacity-80 animate-pulse">
-              Processing Large CSV • Please Wait
+            <p className="mt-4 text-white text-sm font-bold uppercase tracking-[0.3em] opacity-80">
+              {importProgress?.step || 'Processing'}
             </p>
+            <div className="w-full mt-8 bg-white/10 rounded-full h-3 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-orange-400 to-orange-500 transition-all duration-200"
+                style={{ width: `${importProgress?.percent ?? 0}%` }}
+              />
+            </div>
+            <div className="w-full mt-3 flex justify-between text-white/70 text-xs font-bold uppercase tracking-widest">
+              <span>{importProgress?.percent ?? 0}%</span>
+              <span>{importProgress ? `${importProgress.processed} / ${importProgress.total}` : ''}</span>
+              <span>{importProgress?.etaSeconds != null ? `ETA ${importProgress.etaSeconds}s` : ''}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importReport && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[300] flex items-center justify-center p-6 text-center">
+          <div className="bg-white rounded-[40px] p-10 max-w-lg w-full shadow-2xl relative border border-stone-100 max-h-[85vh] overflow-y-auto">
+            <button
+              onClick={() => setImportReport(null)}
+              className="absolute top-8 right-8 p-2 text-stone-400 hover:text-stone-600 transition-colors"
+            >
+              <X size={24} />
+            </button>
+            <div className="space-y-6 text-left">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-stone-800">Import Report</h3>
+                <p className="text-stone-500 text-sm mt-2">
+                  {importReport.totalRows} row(s) processed in {(importReport.processingMs / 1000).toFixed(2)}s.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Inserted</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.inserted}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Updated</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.updated}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Skipped</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.skipped}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Duplicates</p>
+                  <p className="text-2xl font-bold text-stone-800">{importReport.duplicates}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-4 col-span-2">
+                  <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Invalid</p>
+                  <p className="text-2xl font-bold text-red-500">{importReport.invalid}</p>
+                </div>
+              </div>
+
+              {importReport.errors.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2">Error Report</p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {importReport.errors.slice(0, 100).map((err, i) => (
+                      <div key={i} className="bg-red-50 rounded-xl p-3 text-xs">
+                        <p className="font-bold text-stone-700">Row {err.row}</p>
+                        <p className="text-stone-500 mt-1">{err.reason}</p>
+                      </div>
+                    ))}
+                    {importReport.errors.length > 100 && (
+                      <p className="text-stone-400 text-xs text-center">
+                        + {importReport.errors.length - 100} more
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => setImportReport(null)}
+                className="w-full py-4 bg-stone-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-stone-200"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
