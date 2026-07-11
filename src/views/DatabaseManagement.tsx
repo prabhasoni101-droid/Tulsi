@@ -121,10 +121,11 @@ const EditableCell = React.memo<{
   onMouseEnter?: (r: number, c: number) => void,
   onContextMenu?: (e: React.MouseEvent, r: number, c: number) => void,
   isSelected?: boolean,
+  isFillHandleCorner?: boolean,
   rowIdx: number,
   colIdx: number,
   badge?: React.ReactNode
-}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, rowIdx, colIdx, badge }) => {
+}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, isFillHandleCorner, rowIdx, colIdx, badge }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
 
@@ -170,8 +171,8 @@ const EditableCell = React.memo<{
   return (
     <div 
       className={cn(
-        "px-6 py-4 cursor-pointer select-none min-h-[56px] flex items-center", 
-        isSelected ? "bg-orange-100 ring-2 ring-inset ring-orange-400" : "hover:bg-stone-50"
+        "relative px-6 py-4 cursor-pointer select-none min-h-[56px] flex items-center", 
+        isSelected ? "bg-blue-50 ring-2 ring-inset ring-blue-500 z-[1]" : "hover:bg-stone-50"
       )}
       onMouseDown={(e) => {
         if (e.button === 0) {
@@ -186,6 +187,9 @@ const EditableCell = React.memo<{
         <span className="truncate flex-1">{value || `Add ${field}...`}</span>
         {badge}
       </span>
+      {isFillHandleCorner && (
+        <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-blue-500 border border-white rounded-[1px] cursor-crosshair z-[2]" />
+      )}
     </div>
   );
 });
@@ -497,6 +501,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               onMouseEnter={handleMouseEnter}
               onContextMenu={handleCellContextMenu}
               isSelected={isCellSelected(rIndex, cIndex)}
+              isFillHandleCorner={!!selection && Math.max(selection.endRow, selection.startRow) === rIndex && Math.max(selection.endCol, selection.startCol) === cIndex}
               rowIdx={rIndex}
               colIdx={cIndex}
               badge={col === 'Name' && checkIsNew(d.createdAt, d.isImported) ? <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 rounded-full animate-pulse uppercase tracking-wider flex-shrink-0">New</span> : undefined}
@@ -2271,6 +2276,103 @@ const DatabaseManagement: React.FC = () => {
 
     return base;
   }, [filteredDevotees, currentPage, itemsPerPage, isFullscreen, visibleCount, rowDragConfig, lastDropOrder]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      const isTypingTarget = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || (active as HTMLElement).isContentEditable);
+      if (isTypingTarget || !selection) return;
+
+      const maxRow = paginatedDevotees.length - 1;
+      const maxCol = allColumns.length - 1;
+      if (maxRow < 0 || maxCol < 0) return;
+
+      const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
+      const { startRow, startCol, endRow, endCol } = selection;
+      const anchorRow = startRow, anchorCol = startCol === -1 ? 0 : startCol;
+      const curRow = endRow, curCol = endCol === -1 ? 0 : endCol;
+
+      const move = (nextRow: number, nextCol: number, extend: boolean) => {
+        e.preventDefault();
+        const r = clamp(nextRow, 0, maxRow);
+        const c = clamp(nextCol, 0, maxCol);
+        if (extend) {
+          setSelection({ startRow: anchorRow, startCol: anchorCol, endRow: r, endCol: c });
+        } else {
+          setSelection({ startRow: r, startCol: c, endRow: r, endCol: c });
+        }
+        const container = scrollContainerRef.current;
+        if (container) {
+          const rowHeight = 56;
+          const targetTop = r * rowHeight;
+          const targetBottom = targetTop + rowHeight;
+          if (targetTop < container.scrollTop) {
+            container.scrollTop = targetTop;
+          } else if (targetBottom > container.scrollTop + container.clientHeight) {
+            container.scrollTop = targetBottom - container.clientHeight;
+          }
+        }
+      };
+
+      const pageSize = Math.max(1, Math.floor((scrollContainerRef.current?.clientHeight || 400) / 56) - 1);
+
+      switch (e.key) {
+        case 'ArrowUp':
+          move((e.ctrlKey || e.metaKey) ? 0 : curRow - 1, curCol, e.shiftKey);
+          return;
+        case 'ArrowDown':
+          move((e.ctrlKey || e.metaKey) ? maxRow : curRow + 1, curCol, e.shiftKey);
+          return;
+        case 'ArrowLeft':
+          move(curRow, (e.ctrlKey || e.metaKey) ? 0 : curCol - 1, e.shiftKey);
+          return;
+        case 'ArrowRight':
+          move(curRow, (e.ctrlKey || e.metaKey) ? maxCol : curCol + 1, e.shiftKey);
+          return;
+        case 'Tab':
+          e.preventDefault();
+          if (e.shiftKey) {
+            if (curCol > 0) move(curRow, curCol - 1, false);
+            else move(curRow - 1, maxCol, false);
+          } else {
+            if (curCol < maxCol) move(curRow, curCol + 1, false);
+            else move(curRow + 1, 0, false);
+          }
+          return;
+        case 'Enter':
+          e.preventDefault();
+          if (e.shiftKey) move(curRow - 1, curCol, false);
+          else move(curRow + 1, curCol, false);
+          return;
+        case 'Home':
+          if (e.ctrlKey || e.metaKey) move(0, 0, e.shiftKey);
+          else move(curRow, 0, e.shiftKey);
+          return;
+        case 'End':
+          if (e.ctrlKey || e.metaKey) move(maxRow, maxCol, e.shiftKey);
+          else move(curRow, maxCol, e.shiftKey);
+          return;
+        case 'PageUp':
+          move(curRow - pageSize, curCol, e.shiftKey);
+          return;
+        case 'PageDown':
+          move(curRow + pageSize, curCol, e.shiftKey);
+          return;
+        case 'a':
+        case 'A':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            setSelection({ startRow: 0, startCol: 0, endRow: maxRow, endCol: maxCol });
+          }
+          return;
+        default:
+          return;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selection, paginatedDevotees.length, allColumns.length]);
 
   const handleColumnDragStart = (e: React.DragEvent, idx: number) => {
     setDraggedColumnIdx(idx);
