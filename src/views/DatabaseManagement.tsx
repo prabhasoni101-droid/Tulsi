@@ -25,6 +25,20 @@ import { useNavigate, Link } from 'react-router-dom';
 
 const BASE_COLUMNS = ['Name', 'Age', 'Gender', 'Date of Birth', 'Address', 'Institute', 'Attendance', 'Contact No.', 'Mentor', 'Chanting', 'Facilitator', 'Profile'];
 
+// Converts a 0-based column index to a spreadsheet-style letter label
+// (0 -> A, 1 -> B, ..., 25 -> Z, 26 -> AA, ...), used only by the
+// Infinite Sheet (fullscreen) column-letters header row.
+function columnIndexToLetters(index: number): string {
+  let n = index + 1;
+  let label = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
+}
+
 // Sub-components moved out for performance and stability
 const EditableHeader: React.FC<{ 
   col: string, 
@@ -193,6 +207,15 @@ const checkRowInSelection = (rIndex: number, selection: {startRow: number, start
 
 const MemoizedTableRow = React.memo((props: any) => {
   const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps } = props;
+  // Column-virtualization is opt-in: when omitted (the existing non-fullscreen
+  // path), `visibleColumns` defaults to the full `allColumns` array and the
+  // spacer widths default to 0, so rendering is byte-for-byte identical to
+  // before. Only the fullscreen Infinite Sheet view passes a windowed slice.
+  const visibleColumns: string[] = props.visibleColumns || allColumns;
+  const colStartIndex: number = props.colStartIndex ?? 0;
+  const leftSpacerWidth: number = props.leftSpacerWidth ?? 0;
+  const rightSpacerWidth: number = props.rightSpacerWidth ?? 0;
+  const isInfiniteSheet: boolean = !!props.isInfiniteSheet;
 
   const rowRef = useRef<HTMLTableRowElement>(null);
 
@@ -248,12 +271,15 @@ const MemoizedTableRow = React.memo((props: any) => {
         isRowDragSource ? "opacity-30 bg-blue-50 relative pointer-events-none" : ""
       )}
     >
-      <td className={cn(
-        "px-4 py-3 w-16 text-center border-r text-xs font-black select-none cursor-grab transition-colors",
-        rowDragConfig?.active && isRowDragSource ? "cursor-grabbing bg-blue-50" : "cursor-grab hover:bg-stone-50",
-        d.duplicateType ? "border-white/20 text-white/80" : "border-stone-50 text-stone-300",
-        isCellSelected(rIndex, -1) && "bg-orange-100"
-      )}
+      <td
+        className={cn(
+          "px-4 py-3 w-16 text-center border-r text-xs font-black select-none cursor-grab transition-colors",
+          rowDragConfig?.active && isRowDragSource ? "cursor-grabbing bg-blue-50" : "cursor-grab hover:bg-stone-50",
+          d.duplicateType ? "border-white/20 text-white/80" : "border-stone-50 text-stone-300",
+          isCellSelected(rIndex, -1) && "bg-orange-100",
+          isInfiniteSheet && "sticky left-0 z-10 bg-white",
+          isInfiniteSheet && selection?.endRow === rIndex && "bg-orange-50/70"
+        )}
       onMouseDown={(e) => {
         if (rowRef.current) rowRef.current.draggable = true;
         props.handleIndexMouseDown(e, rIndex, d.id);
@@ -282,7 +308,9 @@ const MemoizedTableRow = React.memo((props: any) => {
           {(d.duplicateType === 'partial_contact' || d.duplicateType === 'partial_name') && <div className="absolute bottom-0 w-1.5 h-1.5 bg-amber-400 rounded-full" />}
         </div>
       </td>
-      {allColumns.map((col: string, cIndex: number) => {
+      {leftSpacerWidth > 0 && <td style={{ width: leftSpacerWidth, minWidth: leftSpacerWidth, padding: 0, border: 'none' }} />}
+      {visibleColumns.map((col: string, localIdx: number) => {
+        const cIndex = colStartIndex + localIdx;
         if (col === 'Mentor') {
           const mentorVal = d.mentor || (d as any).Mentor || '';
           const authorizedMentors = templeUsers.filter((u: any) => u.role === 'MENTOR');
@@ -476,6 +504,7 @@ const MemoizedTableRow = React.memo((props: any) => {
           </td>
         );
       })}
+      {rightSpacerWidth > 0 && <td style={{ width: rightSpacerWidth, minWidth: rightSpacerWidth, padding: 0, border: 'none' }} />}
       {(isOwner || isMentor) && (
         <td className="px-6 py-3 text-center">
           <div className="flex items-center justify-center gap-2">
@@ -506,7 +535,12 @@ const MemoizedTableRow = React.memo((props: any) => {
     prev.attendanceColumnMeta !== next.attendanceColumnMeta ||
     prev.attendanceColumnMaps !== next.attendanceColumnMaps ||
     prev.isOwner !== next.isOwner ||
-    prev.isMentor !== next.isMentor
+    prev.isMentor !== next.isMentor ||
+    prev.visibleColumns !== next.visibleColumns ||
+    prev.colStartIndex !== next.colStartIndex ||
+    prev.leftSpacerWidth !== next.leftSpacerWidth ||
+    prev.rightSpacerWidth !== next.rightSpacerWidth ||
+    prev.isInfiniteSheet !== next.isInfiniteSheet
   ) {
     return false;
   }
@@ -2526,6 +2560,28 @@ const DatabaseManagement: React.FC = () => {
     overscan: 10,
   });
 
+  // Column virtualization powers the Infinite Sheet (fullscreen-only) view:
+  // only columns currently scrolled into view are rendered per row, which is
+  // what keeps 20,000+ row x wide-column grids at 60fps instead of each row
+  // mounting every column's DOM regardless of visibility. Outside fullscreen
+  // this virtualizer still exists but its output is simply unused — the
+  // existing table keeps rendering `allColumns` in full, unchanged.
+  const columnVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: allColumns.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 180,
+    overscan: 3,
+  });
+
+  const virtualColumnItems = isFullscreen ? columnVirtualizer.getVirtualItems() : null;
+  const visibleColumnsForRender = virtualColumnItems ? virtualColumnItems.map(vc => allColumns[vc.index]) : allColumns;
+  const colStartIndexForRender = virtualColumnItems && virtualColumnItems.length > 0 ? virtualColumnItems[0].index : 0;
+  const leftColumnSpacerWidth = virtualColumnItems && virtualColumnItems.length > 0 ? virtualColumnItems[0].start : 0;
+  const rightColumnSpacerWidth = virtualColumnItems && virtualColumnItems.length > 0
+    ? columnVirtualizer.getTotalSize() - virtualColumnItems[virtualColumnItems.length - 1].end
+    : 0;
+
   return (
     <Layout>
       <div 
@@ -2910,7 +2966,7 @@ const DatabaseManagement: React.FC = () => {
                 "border border-stone-100 shadow-inner bg-white flex-1 min-h-0 custom-scrollbar", 
                 isFullscreen ? "m-0 rounded-none border-none" : "rounded-3xl max-h-[600px] m-6"
               )}
-              style={{ overflow: 'auto' }}
+              style={{ overflow: 'auto', scrollBehavior: isFullscreen ? 'smooth' : 'auto', contain: isFullscreen ? 'layout paint' : undefined }}
             >
               <div className="inline-block min-w-max min-h-max">
                 <table 
@@ -2918,9 +2974,31 @@ const DatabaseManagement: React.FC = () => {
                   className="w-full text-left border-collapse min-w-max relative select-none"
                 >
                 <thead className="bg-stone-50/80 sticky top-0 z-20 backdrop-blur-md border-b border-stone-100">
+                  {isFullscreen && (
+                    <tr className="text-[9px] uppercase font-black text-stone-300 tracking-[0.3em] bg-stone-100/60 border-b border-stone-100">
+                      <th className="px-8 py-1.5 w-20 text-center border-r border-stone-100 bg-stone-100/60 sticky left-0 z-10"> </th>
+                      {leftColumnSpacerWidth > 0 && <th style={{ width: leftColumnSpacerWidth, minWidth: leftColumnSpacerWidth, padding: 0, border: 'none' }} />}
+                      {visibleColumnsForRender.map((col, localIdx) => {
+                        const idx = colStartIndexForRender + localIdx;
+                        return (
+                          <th key={`letter-${col}`} className="px-8 py-1.5 border-r border-stone-100 text-center">
+                            {columnIndexToLetters(idx)}
+                          </th>
+                        );
+                      })}
+                      {rightColumnSpacerWidth > 0 && <th style={{ width: rightColumnSpacerWidth, minWidth: rightColumnSpacerWidth, padding: 0, border: 'none' }} />}
+                      {(isOwner || isMentor) && <th className="px-8 py-1.5 w-24 text-center" />}
+                    </tr>
+                  )}
                   <tr className="text-[11px] uppercase font-black text-stone-400 tracking-[0.2em]">
-                    <th className="px-8 py-5 w-20 text-center border-r border-stone-100 bg-stone-50/50">#</th>
-                    {allColumns.map((col, idx) => {
+                    <th className={cn(
+                      "px-8 py-5 w-20 text-center border-r border-stone-100 bg-stone-50/50",
+                      isFullscreen && "sticky left-0 z-10"
+                    )}>#</th>
+                    {leftColumnSpacerWidth > 0 && <th style={{ width: leftColumnSpacerWidth, minWidth: leftColumnSpacerWidth, padding: 0, border: 'none' }} />}
+                    {visibleColumnsForRender.map((col, localIdx) => {
+                      const idx = colStartIndexForRender + localIdx;
+                      const isActiveColumn = isFullscreen && selection?.endCol === idx;
                       if (col === 'Attendance') {
                         return (
                           <th 
@@ -2931,7 +3009,8 @@ const DatabaseManagement: React.FC = () => {
                             onDrop={(e) => handleColumnDrop(e, idx)}
                             className={cn(
                               "px-8 py-5 border-r border-stone-100 cursor-move transition-all",
-                              draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100"
+                              draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100",
+                              isActiveColumn && "bg-orange-50/70"
                             )}
                             onClick={() => handleColumnClick(idx)}
                             onContextMenu={(e) => handleColumnContextMenu(e, col, idx)}
@@ -2960,7 +3039,8 @@ const DatabaseManagement: React.FC = () => {
                             onDrop={(e) => handleColumnDrop(e, idx)}
                             className={cn(
                               "px-8 py-5 border-r border-stone-100 cursor-move transition-all",
-                              draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100"
+                              draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100",
+                              isActiveColumn && "bg-orange-50/70"
                             )}
                             onClick={() => handleColumnClick(idx)}
                             onContextMenu={(e) => handleColumnContextMenu(e, col, idx)}
@@ -2981,7 +3061,8 @@ const DatabaseManagement: React.FC = () => {
                           onDrop={(e) => handleColumnDrop(e, idx)}
                           className={cn(
                             "px-8 py-5 border-r border-stone-100 cursor-move transition-all",
-                            draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100"
+                            draggedColumnIdx === idx ? "opacity-30 bg-stone-200" : "hover:bg-stone-100",
+                            isActiveColumn && "bg-orange-50/70"
                           )}
                           onClick={() => handleColumnClick(idx)}
                           onContextMenu={(e) => handleColumnContextMenu(e, col, idx)}
@@ -2995,6 +3076,7 @@ const DatabaseManagement: React.FC = () => {
                         </th>
                       );
                     })}
+                    {rightColumnSpacerWidth > 0 && <th style={{ width: rightColumnSpacerWidth, minWidth: rightColumnSpacerWidth, padding: 0, border: 'none' }} />}
                     {(isOwner || isMentor) && <th className="px-8 py-5 w-24 text-center">Actions</th>}
                   </tr>
                 </thead>
@@ -3013,6 +3095,11 @@ const DatabaseManagement: React.FC = () => {
                         currentPage={currentPage}
                         itemsPerPage={itemsPerPage}
                         allColumns={allColumns}
+                        visibleColumns={visibleColumnsForRender}
+                        colStartIndex={colStartIndexForRender}
+                        leftSpacerWidth={leftColumnSpacerWidth}
+                        rightSpacerWidth={rightColumnSpacerWidth}
+                        isInfiniteSheet={isFullscreen}
                         templeUsers={templeUsers}
                         selectedDbEventId={selectedDbEventId}
                         dbAttendanceMap={dbAttendanceMap}
