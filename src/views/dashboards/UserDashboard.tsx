@@ -10,6 +10,7 @@ import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } fr
 // NEW
 import ContactLink from '../../components/ContactLink';
 import { subscribeToVisibleEvents, subscribeToEvent } from '../../services/eventVisibility';
+import { profile } from 'console';
 
 const UserDashboard = () => {
   const { profile } = useAuth();
@@ -83,8 +84,8 @@ const UserDashboard = () => {
     }
   };
 
-  useEffect(() => {
-    if (!profile?.templeId) return;
+  useEffect(()) => {
+     if (!profile?.templeId) return;
 
     let unsubscribeE = () => {};
     let unsubscribeA = () => {};
@@ -128,7 +129,7 @@ const UserDashboard = () => {
       const eventDocUnsubs = new Map<string, () => void>();
       const assignedEventsMap = new Map<string, Event>();
 
-      unsubscribeA = onSnapshot(qAssignments, (snapshot) => {
+      unsubscribeA = onSnapshot(qAssignments), (snapshot) => {
         const assignedIds = Array.from(new Set(
           snapshot.docs
             .map(doc => doc.data().eventId as string | undefined)
