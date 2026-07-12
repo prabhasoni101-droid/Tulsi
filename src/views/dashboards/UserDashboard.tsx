@@ -84,12 +84,12 @@ const UserDashboard = () => {
     }
   };
 
-  useEffect(()) => {
+  useEffect(() => {
      if (!profile?.templeId) return;
 
     let unsubscribeE = () => {};
     let unsubscribeA = () => {};
-
+  
     if (profile.role === 'OWNER' || profile.role === 'MENTOR') {
       unsubscribeE = onSnapshot(collection(db, 'events'), (snapshot) => {
         const allEvents = snapshot.docs
@@ -129,7 +129,7 @@ const UserDashboard = () => {
       const eventDocUnsubs = new Map<string, () => void>();
       const assignedEventsMap = new Map<string, Event>();
 
-      unsubscribeA = onSnapshot(qAssignments), (snapshot) => {
+      unsubscribeA = onSnapshot(qAssignments, (snapshot) => {
         const assignedIds = Array.from(new Set(
           snapshot.docs
             .map(doc => doc.data().eventId as string | undefined)
@@ -146,21 +146,27 @@ const UserDashboard = () => {
         }
 
         // Start watching any newly-assigned events live
-        assignedIds.forEach(eventId => {
-          if (eventDocUnsubs.has(eventId)) return;
-          // NEW
-          const unsubDoc = subscribeToEvent(eventId, (ev) => {
-            if (!isMounted) return;
-            if (ev) {
-              assignedEventsMap.set(eventId, ev);
-            } else {
-              assignedEventsMap.delete(eventId);
-            }
-            assignedEvents = Array.from(assignedEventsMap.values()).filter(
-              event => event.templeId === profile.templeId && !event.isDeleted
-            );
-            publishEvents();
-          });
+        assignedIds.forEach((eventId) => {
+         if (eventDocUnsubs.has(eventId)) return;
+
+         const unsubDoc = subscribeToEvent(eventId, (ev) => {
+           if (!isMounted) return;
+
+           if (ev) {
+           assignedEventsMap.set(eventId, ev);
+           } else {
+           assignedEventsMap.delete(eventId);
+           } 
+
+           assignedEvents = Array.from(assignedEventsMap.values()).filter(
+             event => event.templeId === profile.templeId && !event.isDeleted
+            );  
+
+             publishEvents();
+           });
+
+  eventDocUnsubs.set(eventId, unsubDoc);
+});
 
         assignedEvents = Array.from(assignedEventsMap.values()).filter(
           event => event.templeId === profile.templeId && !event.isDeleted
