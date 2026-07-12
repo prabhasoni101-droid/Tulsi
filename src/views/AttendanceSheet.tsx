@@ -34,6 +34,7 @@ import { cn, getPublicAttendanceUrl, normalizePhoneNumber } from '../lib/utils';
 import { detectColumns, runAttendanceImport, ImportReport } from '../lib/attendanceImportEngine';
 import ContactLink from '../components/ContactLink';
 import { useAuth } from '../context/AuthContext';
+import { softDeleteEventAndRevokeVisibility } from '../services/eventVisibility';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { QRCodeSVG } from 'qrcode.react';
@@ -511,11 +512,7 @@ const AttendanceSheet = () => {
       try {
         setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, isDeleted: true } : ev));
         if (selectedEventId === eventId) setSelectedEventId('');
-        await updateDoc(doc(db, 'events', eventId), { 
-          isDeleted: true,
-          isAttendanceOpen: false,
-          isPublic: false
-        });
+        await softDeleteEventAndRevokeVisibility(eventId, profile?.uid ?? null);
       } catch (err: any) {
         console.error("Soft delete failed:", err);
         alert("Failed to move to history.");

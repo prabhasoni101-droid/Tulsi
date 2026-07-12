@@ -89,6 +89,8 @@ export interface Event {
   description: string;
   mediaUrl: string;
   isPublic: boolean;
+  visibilityUpdatedAt?: any;
+  visibilityUpdatedBy?: string | null;
   createdBy: string;
   templeId?: string;
   createdAt: string;

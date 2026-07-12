@@ -37,7 +37,9 @@ import {
   Heart,
   User
 } from 'lucide-react';
+// NEW
 import { cn, getPublicAttendanceUrl } from '../lib/utils';
+import { subscribeToEvent, toggleEventVisibility, updateEventFields } from '../services/eventVisibility';
 
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -68,9 +70,9 @@ const EventDetail = () => {
   useEffect(() => {
     if (!id) return;
 
-    // Fetch Event
-    const unsubEvent = onSnapshot(doc(db, 'events', id), (doc) => {
-      if (doc.exists()) setEvent({ id: doc.id, ...doc.data() } as Event);
+    // Fetch Event (single source of truth for visibility + all other fields)
+    const unsubEvent = subscribeToEvent(id, (ev) => {
+      if (ev) setEvent(ev);
       else navigate('/');
     });
 
@@ -255,17 +257,14 @@ const EventDetail = () => {
   }, [assignments, attendance]);
 
   const handleTogglePublic = async () => {
-    if (!event) return;
-    const currentStatus = event.isPublic === true;
-    await updateDoc(doc(db, 'events', event.id!), { isPublic: !currentStatus });
+    if (!event?.id) return;
+    await toggleEventVisibility(event, profile?.uid ?? null);
   };
 
   const togglePublicAttendance = async () => {
-    if (!event) return;
+    if (!event?.id) return;
     const isOpen = !!(event as any)?.isAttendanceOpen;
-    await updateDoc(doc(db, 'events', event.id!), {
-      isAttendanceOpen: !isOpen
-    });
+    await updateEventFields(event.id, { isAttendanceOpen: !isOpen });
   };
 
   const handleUpdateAssignment = async (assignmentId: string, response: CallingAssignment['response'], responseText?: string) => {

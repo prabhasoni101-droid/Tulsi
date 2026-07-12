@@ -9,6 +9,7 @@ import { SearchInput } from '../../components/SearchInput';
 import { Users, Phone, FileText, Plus, UserPlus, X, Loader2, Filter, ChevronRight, Calendar, ArrowUpDown, AlertTriangle, MoreVertical, Heart, User, Layers } from 'lucide-react';
 import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../../lib/utils';
 import ContactLink from '../../components/ContactLink';
+import { subscribeToVisibleEvents } from '../../services/eventVisibility';
 
 const MentorDashboard = () => {
   const { profile } = useAuth();
@@ -62,19 +63,11 @@ const MentorDashboard = () => {
       );
     });
 
-    const unsubscribeE = onSnapshot(collection(db, 'events'), (snapshot) => {
+    const unsubscribeE = subscribeToVisibleEvents(profile.templeId, (visibleEvents) => {
       const eMap: Record<string, Event> = {};
-      snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as Event))
-        // Internal-only events (isPublic !== true) must stay hidden from a
-        // mentor unless they're individually calling-assigned to that event
-        // (handled by the assignment-listener merge below) — previously this
-        // filter was missing entirely, so every event in the temple, public
-        // or internal, showed up here the instant it was created.
-        .filter(e => e.templeId === profile.templeId && !e.isDeleted && e.isPublic === true)
-        .forEach(e => {
-          eMap[e.id!] = e;
-        });
+      visibleEvents.forEach(e => {
+        eMap[e.id!] = e;
+      });
       activeEventsMap = eMap;
       setEvents(eMap);
     });

@@ -5,8 +5,10 @@ import {
   writeBatch,
   increment
 } from 'firebase/firestore';
+// NEW
 import { Event } from '../types';
 import { normalizePhoneNumber } from './utils';
+import { getEventVisibilityDefaults } from '../services/eventVisibility';
 
 export type ImportRowStatus = 'OK' | 'SKIPPED_INVALID' | 'CONFLICT';
 
@@ -209,7 +211,7 @@ export async function runAttendanceImport(params: RunImportParams): Promise<Impo
         date: new Date().toISOString(),
         description: 'Imported from attendance CSV upload.',
         mediaUrl: '',
-        isPublic: false,
+        ...getEventVisibilityDefaults(),
         createdBy: userId,
         templeId,
         createdAt: new Date().toISOString(),

@@ -7,7 +7,9 @@ import { motion } from 'motion/react';
 import { Calendar, UserPlus, Phone, ChevronRight, CheckCircle2, ChevronDown, Plus, Heart, AlertTriangle, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } from '../../lib/utils';
+// NEW
 import ContactLink from '../../components/ContactLink';
+import { subscribeToVisibleEvents, subscribeToEvent } from '../../services/eventVisibility';
 
 const UserDashboard = () => {
   const { profile } = useAuth();
@@ -109,18 +111,11 @@ const UserDashboard = () => {
         setEvents(Array.from(visible.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
       };
 
-      unsubscribeE = onSnapshot(
-        query(
-          collection(db, 'events'),
-          where('templeId', '==', profile.templeId),
-          where('isDeleted', '==', false),
-          where('isPublic', '==', true)
-        ),
-        (snapshot) => {
-          publicEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
-          publishEvents();
-        }
-      );
+      // NEW
+      unsubscribeE = subscribeToVisibleEvents(profile.templeId, (visibleEvents) => {
+        publicEvents = visibleEvents;
+        publishEvents();
+      });
 
       const qAssignments = query(collectionGroup(db, 'assignments'), where('userId', '==', profile.uid));
 
@@ -152,10 +147,11 @@ const UserDashboard = () => {
         // Start watching any newly-assigned events live
         assignedIds.forEach(eventId => {
           if (eventDocUnsubs.has(eventId)) return;
-          const unsubDoc = onSnapshot(doc(db, 'events', eventId), (eventSnap) => {
+          // NEW
+          const unsubDoc = subscribeToEvent(eventId, (ev) => {
             if (!isMounted) return;
-            if (eventSnap.exists()) {
-              assignedEventsMap.set(eventId, { id: eventSnap.id, ...eventSnap.data() } as Event);
+            if (ev) {
+              assignedEventsMap.set(eventId, ev);
             } else {
               assignedEventsMap.delete(eventId);
             }
@@ -164,8 +160,6 @@ const UserDashboard = () => {
             );
             publishEvents();
           });
-          eventDocUnsubs.set(eventId, unsubDoc);
-        });
 
         assignedEvents = Array.from(assignedEventsMap.values()).filter(
           event => event.templeId === profile.templeId && !event.isDeleted

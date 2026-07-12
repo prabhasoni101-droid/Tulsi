@@ -16,6 +16,10 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { Event, UserProfile } from '../../types';
+import {
+  getEventVisibilityDefaults,
+  softDeleteEventAndRevokeVisibility,
+} from '../../services/eventVisibility';
 import { motion } from 'motion/react';
 import { 
   Plus, 
@@ -234,7 +238,7 @@ const OwnerDashboard = () => {
         date: newEvent.date,
         description: newEvent.description,
         mediaUrl,
-        isPublic: false,
+        ...getEventVisibilityDefaults(),
         templeId,
         createdBy: profile?.uid,
         isDeleted: false,
@@ -306,11 +310,7 @@ const OwnerDashboard = () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       openConfirm('Delete Event', 'Are you sure you want to remove this event?', async () => {
-                        await updateDoc(doc(db, 'events', event.id!), { 
-                          isDeleted: true, 
-                          isPublic: false,
-                          deletedAt: new Date().toISOString()
-                        });
+                        await softDeleteEventAndRevokeVisibility(event.id!, profile?.uid ?? null);
                       });
                     }}
                     className="p-3 bg-white/90 hover:bg-red-50 text-red-500 rounded-2xl shadow-xl backdrop-blur-sm transition-colors border border-red-50"
@@ -815,7 +815,7 @@ const OwnerDashboard = () => {
                       try {
                         const eventDoc = await addDoc(collection(db, 'events'), {
                           ...newEvent,
-                          isPublic: false,
+                          ...getEventVisibilityDefaults(),
                           templateId: selectedTemplateId,
                           templeId: profile?.templeId || profile?.uid,
                           createdBy: profile?.uid,
