@@ -124,16 +124,39 @@ const EditableCell = React.memo<{
   isFillHandleCorner?: boolean,
   rowIdx: number,
   colIdx: number,
-  badge?: React.ReactNode
-}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, isFillHandleCorner, rowIdx, colIdx, badge }) => {
+  badge?: React.ReactNode,
+  editSignal?: number,
+  onCommitAndMove?: (dir: 'up' | 'down' | 'left' | 'right') => void
+}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, isFillHandleCorner, rowIdx, colIdx, badge, editSignal, onCommitAndMove }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
+  const lastEditSignal = useRef(editSignal);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     if (!isEditing) {
       setValue(initialValue);
     }
   }, [initialValue, isEditing]);
+
+  useEffect(() => {
+    if (isSelected && editSignal !== undefined && editSignal !== lastEditSignal.current) {
+      lastEditSignal.current = editSignal;
+      setValue(initialValue);
+      setIsEditing(true);
+    } else {
+      lastEditSignal.current = editSignal;
+    }
+  }, [editSignal, isSelected, initialValue]);
+
+  const commitIfChanged = () => {
+    if (savingRef.current) return;
+    if (value !== initialValue) {
+      savingRef.current = true;
+      onSave(id, field, value);
+      setTimeout(() => { savingRef.current = false; }, 0);
+    }
+  };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -152,14 +175,26 @@ const EditableCell = React.memo<{
         onChange={e => setValue(field === 'Contact No.' ? sanitizeMobileInput(e.target.value) : e.target.value)}
         onMouseDown={e => e.stopPropagation()}
         onBlur={() => {
-           if (value !== initialValue) {
-             onSave(id, field, value);
-           }
+           commitIfChanged();
            setIsEditing(false);
         }}
         onKeyDown={e => {
-          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitIfChanged();
+            setIsEditing(false);
+            onCommitAndMove?.(e.shiftKey ? 'up' : 'down');
+            return;
+          }
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            commitIfChanged();
+            setIsEditing(false);
+            onCommitAndMove?.(e.shiftKey ? 'left' : 'right');
+            return;
+          }
           if (e.key === 'Escape') {
+            e.stopPropagation();
             setValue(initialValue);
             setIsEditing(false);
           }
@@ -210,7 +245,7 @@ const checkRowInSelection = (rIndex: number, selection: {startRow: number, start
 };
 
 const MemoizedTableRow = React.memo((props: any) => {
-  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps } = props;
+  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps, editSignal, onCommitAndMove } = props;
   // Column-virtualization is opt-in: when omitted (the existing non-fullscreen
   // path), `visibleColumns` defaults to the full `allColumns` array and the
   // spacer widths default to 0, so rendering is byte-for-byte identical to
@@ -504,6 +539,8 @@ const MemoizedTableRow = React.memo((props: any) => {
               isFillHandleCorner={!!selection && Math.max(selection.endRow, selection.startRow) === rIndex && Math.max(selection.endCol, selection.startCol) === cIndex}
               rowIdx={rIndex}
               colIdx={cIndex}
+              editSignal={editSignal}
+              onCommitAndMove={onCommitAndMove}
               badge={col === 'Name' && checkIsNew(d.createdAt, d.isImported) ? <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 rounded-full animate-pulse uppercase tracking-wider flex-shrink-0">New</span> : undefined}
             />
           </td>
@@ -545,7 +582,8 @@ const MemoizedTableRow = React.memo((props: any) => {
     prev.colStartIndex !== next.colStartIndex ||
     prev.leftSpacerWidth !== next.leftSpacerWidth ||
     prev.rightSpacerWidth !== next.rightSpacerWidth ||
-    prev.isInfiniteSheet !== next.isInfiniteSheet
+    prev.isInfiniteSheet !== next.isInfiniteSheet ||
+    prev.editSignal !== next.editSignal
   ) {
     return false;
   }
@@ -613,6 +651,7 @@ const DatabaseManagement: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [redoStack, setRedoStack] = useState<any[]>([]);
   const [selection, setSelection] = useState<{startRow: number, startCol: number, endRow: number, endCol: number} | null>(null);
+  const [editSignal, setEditSignal] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
   const isDraggingCellRef = useRef(false);
@@ -2277,6 +2316,45 @@ const DatabaseManagement: React.FC = () => {
     return base;
   }, [filteredDevotees, currentPage, itemsPerPage, isFullscreen, visibleCount, rowDragConfig, lastDropOrder]);
 
+  const moveSelection = useCallback((nextRow: number, nextCol: number, extend: boolean) => {
+    const maxRow = paginatedDevotees.length - 1;
+    const maxCol = allColumns.length - 1;
+    if (maxRow < 0 || maxCol < 0) return;
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
+    const r = clamp(nextRow, 0, maxRow);
+    const c = clamp(nextCol, 0, maxCol);
+    setSelection(prev => {
+      const anchorRow = extend && prev ? prev.startRow : r;
+      const anchorCol = extend && prev ? (prev.startCol === -1 ? 0 : prev.startCol) : c;
+      return extend
+        ? { startRow: anchorRow, startCol: anchorCol, endRow: r, endCol: c }
+        : { startRow: r, startCol: c, endRow: r, endCol: c };
+    });
+    const container = scrollContainerRef.current;
+    if (container) {
+      const rowHeight = 56;
+      const targetTop = r * rowHeight;
+      const targetBottom = targetTop + rowHeight;
+      if (targetTop < container.scrollTop) {
+        container.scrollTop = targetTop;
+      } else if (targetBottom > container.scrollTop + container.clientHeight) {
+        container.scrollTop = targetBottom - container.clientHeight;
+      }
+    }
+  }, [paginatedDevotees.length, allColumns.length]);
+
+  const onCommitAndMove = useCallback((dir: 'up' | 'down' | 'left' | 'right') => {
+    setSelection(prev => {
+      if (!prev) return prev;
+      const curRow = prev.endRow, curCol = prev.endCol === -1 ? 0 : prev.endCol;
+      if (dir === 'up') moveSelection(curRow - 1, curCol, false);
+      else if (dir === 'down') moveSelection(curRow + 1, curCol, false);
+      else if (dir === 'left') moveSelection(curRow, curCol - 1, false);
+      else moveSelection(curRow, curCol + 1, false);
+      return prev;
+    });
+  }, [moveSelection]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement;
@@ -2287,31 +2365,12 @@ const DatabaseManagement: React.FC = () => {
       const maxCol = allColumns.length - 1;
       if (maxRow < 0 || maxCol < 0) return;
 
-      const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
-      const { startRow, startCol, endRow, endCol } = selection;
-      const anchorRow = startRow, anchorCol = startCol === -1 ? 0 : startCol;
+      const { startCol, endRow, endCol } = selection;
       const curRow = endRow, curCol = endCol === -1 ? 0 : endCol;
 
       const move = (nextRow: number, nextCol: number, extend: boolean) => {
         e.preventDefault();
-        const r = clamp(nextRow, 0, maxRow);
-        const c = clamp(nextCol, 0, maxCol);
-        if (extend) {
-          setSelection({ startRow: anchorRow, startCol: anchorCol, endRow: r, endCol: c });
-        } else {
-          setSelection({ startRow: r, startCol: c, endRow: r, endCol: c });
-        }
-        const container = scrollContainerRef.current;
-        if (container) {
-          const rowHeight = 56;
-          const targetTop = r * rowHeight;
-          const targetBottom = targetTop + rowHeight;
-          if (targetTop < container.scrollTop) {
-            container.scrollTop = targetTop;
-          } else if (targetBottom > container.scrollTop + container.clientHeight) {
-            container.scrollTop = targetBottom - container.clientHeight;
-          }
-        }
+        moveSelection(nextRow, nextCol, extend);
       };
 
       const pageSize = Math.max(1, Math.floor((scrollContainerRef.current?.clientHeight || 400) / 56) - 1);
@@ -2364,6 +2423,10 @@ const DatabaseManagement: React.FC = () => {
             e.preventDefault();
             setSelection({ startRow: 0, startCol: 0, endRow: maxRow, endCol: maxCol });
           }
+          return;
+        case 'F2':
+          e.preventDefault();
+          setEditSignal(s => s + 1);
           return;
         default:
           return;
@@ -3229,6 +3292,8 @@ const DatabaseManagement: React.FC = () => {
                         handleDelete={handleDelete}
                         handleCellContextMenu={handleCellContextMenu}
                         handleToggleAttendance={handleToggleAttendance}
+                        editSignal={editSignal}
+                        onCommitAndMove={onCommitAndMove}
                       />
                     );
                   })}
