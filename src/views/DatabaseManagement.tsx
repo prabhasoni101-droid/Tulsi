@@ -25,6 +25,50 @@ import { useNavigate, Link } from 'react-router-dom';
 
 const BASE_COLUMNS = ['Name', 'Age', 'Gender', 'Date of Birth', 'Address', 'Institute', 'Attendance', 'Contact No.', 'Mentor', 'Chanting', 'Facilitator', 'Profile'];
 
+const STATIC_RESTRICTED_COLS = ['Mentor', 'Facilitator', 'Profile', 'Attendance'];
+
+function colNameToDbField(colName: string): string {
+  if (colName === 'Name') return 'name';
+  if (colName === 'Age') return 'age';
+  if (colName === 'Mentor') return 'mentor';
+  if (colName === 'Chanting') return 'chanting';
+  if (colName === 'Contact No.') return 'contact';
+  if (colName === 'Gender') return 'gender';
+  if (colName === 'Date of Birth') return 'dob';
+  if (colName === 'Address') return 'address';
+  if (colName === 'Institute') return 'institute';
+  if (colName === 'Facilitator') return 'facilitatorName';
+  return colName;
+}
+
+function dbFieldToColName(dbField: string): string {
+  if (dbField === 'name') return 'Name';
+  if (dbField === 'age') return 'Age';
+  if (dbField === 'mentor') return 'Mentor';
+  if (dbField === 'chanting') return 'Chanting';
+  if (dbField === 'contact') return 'Contact No.';
+  if (dbField === 'gender') return 'Gender';
+  if (dbField === 'dob') return 'Date of Birth';
+  if (dbField === 'address') return 'Address';
+  if (dbField === 'institute') return 'Institute';
+  if (dbField === 'facilitatorName') return 'Facilitator';
+  return dbField;
+}
+
+function readCellValue(d: any, colName: string): string {
+  if (colName === 'Name') return d.name || d.Name || '';
+  if (colName === 'Age') return (d.age ?? d.Age ?? '').toString();
+  if (colName === 'Mentor') return d.mentor || d.Mentor || '';
+  if (colName === 'Chanting') return (d.chanting ?? d.Chanting ?? '').toString();
+  if (colName === 'Contact No.') return d.contact || d['Contact No.'] || '';
+  if (colName === 'Gender') return d.gender || d.Gender || '';
+  if (colName === 'Date of Birth') return d.dob || d['Date of Birth'] || '';
+  if (colName === 'Address') return d.address || d.Address || '';
+  if (colName === 'Institute') return d.institute || d.Institute || '';
+  if (colName === 'Facilitator') return d.facilitatorName || d.facilitator || d.Facilitator || '';
+  return (d[colName] ?? '').toString();
+}
+
 // Converts a 0-based column index to a spreadsheet-style letter label
 // (0 -> A, 1 -> B, ..., 25 -> Z, 26 -> AA, ...), used only by the
 // Infinite Sheet (fullscreen) column-letters header row.
@@ -126,8 +170,9 @@ const EditableCell = React.memo<{
   colIdx: number,
   badge?: React.ReactNode,
   editSignal?: number,
+  editStartValue?: string,
   onCommitAndMove?: (dir: 'up' | 'down' | 'left' | 'right') => void
-}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, isFillHandleCorner, rowIdx, colIdx, badge, editSignal, onCommitAndMove }) => {
+}>(({ id, field, initialValue, onSave, onMouseDown, onMouseEnter, onContextMenu, isSelected, isFillHandleCorner, rowIdx, colIdx, badge, editSignal, editStartValue, onCommitAndMove }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
   const lastEditSignal = useRef(editSignal);
@@ -142,12 +187,12 @@ const EditableCell = React.memo<{
   useEffect(() => {
     if (isSelected && editSignal !== undefined && editSignal !== lastEditSignal.current) {
       lastEditSignal.current = editSignal;
-      setValue(initialValue);
+      setValue(editStartValue !== undefined ? editStartValue : initialValue);
       setIsEditing(true);
     } else {
       lastEditSignal.current = editSignal;
     }
-  }, [editSignal, isSelected, initialValue]);
+  }, [editSignal, isSelected, initialValue, editStartValue]);
 
   const commitIfChanged = () => {
     if (savingRef.current) return;
@@ -164,41 +209,65 @@ const EditableCell = React.memo<{
   };
 
   if (isEditing) {
+    const isMultiline = field !== 'Contact No.' && field !== 'Age' && field !== 'Chanting';
+    const commonProps = {
+      autoFocus: true,
+      className: "w-full h-full px-6 py-4 border-2 border-orange-500 outline-none font-black text-stone-700 bg-white resize-none",
+      value,
+      onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+      onBlur: () => {
+        commitIfChanged();
+        setIsEditing(false);
+      },
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && e.altKey) {
+          e.preventDefault();
+          const target = e.currentTarget as HTMLTextAreaElement | HTMLInputElement;
+          const start = target.selectionStart ?? value.length;
+          const end = target.selectionEnd ?? value.length;
+          setValue(value.slice(0, start) + '\n' + value.slice(end));
+          requestAnimationFrame(() => {
+            target.selectionStart = target.selectionEnd = start + 1;
+          });
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitIfChanged();
+          setIsEditing(false);
+          onCommitAndMove?.(e.shiftKey ? 'up' : 'down');
+          return;
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          commitIfChanged();
+          setIsEditing(false);
+          onCommitAndMove?.(e.shiftKey ? 'left' : 'right');
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          setValue(initialValue);
+          setIsEditing(false);
+        }
+      }
+    };
+    if (isMultiline) {
+      return (
+        <textarea
+          {...commonProps}
+          rows={1}
+          onChange={e => setValue(e.target.value)}
+        />
+      );
+    }
     return (
-      <input 
-        autoFocus
+      <input
+        {...commonProps}
         type={field === 'Contact No.' ? 'tel' : 'text'}
         inputMode={field === 'Contact No.' ? 'numeric' : undefined}
         maxLength={field === 'Contact No.' ? 10 : undefined}
-        className="w-full h-full px-6 py-4 border-2 border-orange-500 outline-none font-black text-stone-700 bg-white"
-        value={value}
         onChange={e => setValue(field === 'Contact No.' ? sanitizeMobileInput(e.target.value) : e.target.value)}
-        onMouseDown={e => e.stopPropagation()}
-        onBlur={() => {
-           commitIfChanged();
-           setIsEditing(false);
-        }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            commitIfChanged();
-            setIsEditing(false);
-            onCommitAndMove?.(e.shiftKey ? 'up' : 'down');
-            return;
-          }
-          if (e.key === 'Tab') {
-            e.preventDefault();
-            commitIfChanged();
-            setIsEditing(false);
-            onCommitAndMove?.(e.shiftKey ? 'left' : 'right');
-            return;
-          }
-          if (e.key === 'Escape') {
-            e.stopPropagation();
-            setValue(initialValue);
-            setIsEditing(false);
-          }
-        }}
       />
     );
   }
@@ -245,7 +314,7 @@ const checkRowInSelection = (rIndex: number, selection: {startRow: number, start
 };
 
 const MemoizedTableRow = React.memo((props: any) => {
-  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps, editSignal, onCommitAndMove } = props;
+  const { d, rIndex, currentPage, itemsPerPage, allColumns, templeUsers, selectedDbEventId, dbAttendanceMap, totalEvents, selection, rowDragConfig, isOwner, isMentor, handleMouseDown, handleMouseEnter, handleUpdateFacilitator, handleAddToFacilitation, navigate, handleCellSave, handleDelete, handleCellContextMenu, handleToggleAttendance, handleDragTouchStart, handleDragTouchMove, handleDragTouchEnd, handleRowDragStartNative, handleRowDragOverNative, handleRowDragEndNative, attendanceColumnMeta, attendanceColumnMaps, editSignal, editStartValue, onCommitAndMove } = props;
   // Column-virtualization is opt-in: when omitted (the existing non-fullscreen
   // path), `visibleColumns` defaults to the full `allColumns` array and the
   // spacer widths default to 0, so rendering is byte-for-byte identical to
@@ -358,7 +427,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               key={col} 
               data-row-idx={rIndex}
               data-col-idx={cIndex}
-              className={cn("px-6 py-3 border-r border-stone-50", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              className={cn("px-6 py-3 border-r border-[#D4D4D4]", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
               onMouseDown={() => handleMouseDown(rIndex, cIndex)}
               onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
               onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
@@ -385,7 +454,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               key={col} 
               data-row-idx={rIndex}
               data-col-idx={cIndex}
-              className={cn("px-6 py-3 border-r border-stone-50", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              className={cn("px-6 py-3 border-r border-[#D4D4D4]", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
               onMouseDown={() => handleMouseDown(rIndex, cIndex)}
               onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
               onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
@@ -412,7 +481,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               key={col} 
               data-row-idx={rIndex}
               data-col-idx={cIndex}
-              className={cn("px-6 py-3 border-r border-stone-50 text-center", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              className={cn("px-6 py-3 border-r border-[#D4D4D4] text-center", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
               onMouseDown={() => handleMouseDown(rIndex, cIndex)}
               onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
               onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
@@ -448,7 +517,7 @@ const MemoizedTableRow = React.memo((props: any) => {
         if (col === 'Attendance') {
           if (selectedDbEventId === 'NONE') {
             return (
-              <td key={col} className="p-0 border-r border-stone-50 font-mono">
+              <td key={col} className="p-0 border-r border-[#D4D4D4] font-mono">
                 <EditableCell 
                   id={d.id!} 
                   field={col} 
@@ -470,7 +539,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               key={col} 
               data-row-idx={rIndex}
               data-col-idx={cIndex}
-              className={cn("px-6 py-3 border-r border-stone-50 text-center font-bold relative group/att cursor-pointer", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              className={cn("px-6 py-3 border-r border-[#D4D4D4] text-center font-bold relative group/att cursor-pointer", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
               onMouseDown={(e) => {
                 if (e.button === 0) handleMouseDown(rIndex, cIndex);
               }}
@@ -503,7 +572,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               key={col} 
               data-row-idx={rIndex}
               data-col-idx={cIndex}
-              className={cn("px-6 py-3 border-r border-stone-50 text-center font-bold", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+              className={cn("px-6 py-3 border-r border-[#D4D4D4] text-center font-bold", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
               onMouseDown={(e) => { if (e.button === 0) handleMouseDown(rIndex, cIndex); }}
               onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
               onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
@@ -525,7 +594,7 @@ const MemoizedTableRow = React.memo((props: any) => {
             key={col} 
             data-row-idx={rIndex}
             data-col-idx={cIndex}
-            className={cn("p-0 border-r border-stone-50 transition-colors focus-within:ring-inset focus-within:ring-2 focus-within:ring-orange-200", isNumeric && "font-mono")}
+            className={cn("p-0 border-r border-[#D4D4D4] transition-colors focus-within:ring-inset focus-within:ring-2 focus-within:ring-orange-200", isNumeric && "font-mono")}
           >
             <EditableCell 
               id={d.id!} 
@@ -540,6 +609,7 @@ const MemoizedTableRow = React.memo((props: any) => {
               rowIdx={rIndex}
               colIdx={cIndex}
               editSignal={editSignal}
+              editStartValue={editStartValue}
               onCommitAndMove={onCommitAndMove}
               badge={col === 'Name' && checkIsNew(d.createdAt, d.isImported) ? <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 rounded-full animate-pulse uppercase tracking-wider flex-shrink-0">New</span> : undefined}
             />
@@ -583,7 +653,8 @@ const MemoizedTableRow = React.memo((props: any) => {
     prev.leftSpacerWidth !== next.leftSpacerWidth ||
     prev.rightSpacerWidth !== next.rightSpacerWidth ||
     prev.isInfiniteSheet !== next.isInfiniteSheet ||
-    prev.editSignal !== next.editSignal
+    prev.editSignal !== next.editSignal ||
+    prev.editStartValue !== next.editStartValue
   ) {
     return false;
   }
@@ -651,7 +722,9 @@ const DatabaseManagement: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [redoStack, setRedoStack] = useState<any[]>([]);
   const [selection, setSelection] = useState<{startRow: number, startCol: number, endRow: number, endCol: number} | null>(null);
+  
   const [editSignal, setEditSignal] = useState(0);
+  const [editStartValue, setEditStartValue] = useState<string | undefined>(undefined);
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
   const isDraggingCellRef = useRef(false);
@@ -793,6 +866,38 @@ const DatabaseManagement: React.FC = () => {
       console.error("Failed to log activity:", e);
     }
   }, [profile]);
+
+  const editQueueRef = useRef<Map<string, Record<string, any>>>(new Map());
+  const editFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editFlushInFlightRef = useRef(false);
+
+  const flushEditQueue = useCallback(async () => {
+    if (editFlushInFlightRef.current) return;
+    if (editQueueRef.current.size === 0) return;
+    editFlushInFlightRef.current = true;
+    const queue = editQueueRef.current;
+    editQueueRef.current = new Map();
+    try {
+      const batch = writeBatch(db);
+      queue.forEach((fields, id) => {
+        batch.set(doc(db, 'devotees', id), { ...fields, updatedAt: serverTimestamp() }, { merge: true });
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error('Auto Save Queue flush failed:', e);
+    } finally {
+      editFlushInFlightRef.current = false;
+      if (editQueueRef.current.size > 0) flushEditQueue();
+    }
+  }, []);
+
+  const queueCellWrite = useCallback((id: string, dbField: string, value: any) => {
+    const existing = editQueueRef.current.get(id) || {};
+    existing[dbField] = value;
+    editQueueRef.current.set(id, existing);
+    if (editFlushTimerRef.current) clearTimeout(editFlushTimerRef.current);
+    editFlushTimerRef.current = setTimeout(flushEditQueue, 120);
+  }, [flushEditQueue]);
 
   const handleMouseEnter = useCallback((rIdx: number, cIdx: number) => {
     if (rowDragConfig?.active) {
@@ -2340,8 +2445,144 @@ const DatabaseManagement: React.FC = () => {
       } else if (targetBottom > container.scrollTop + container.clientHeight) {
         container.scrollTop = targetBottom - container.clientHeight;
       }
+      const colWidth = 180;
+      const targetLeft = c * colWidth;
+      const targetRight = targetLeft + colWidth;
+      if (targetLeft < container.scrollLeft) {
+        container.scrollLeft = targetLeft;
+      } else if (targetRight > container.scrollLeft + container.clientWidth) {
+        container.scrollLeft = targetRight - container.clientWidth;
+      }
     }
   }, [paginatedDevotees.length, allColumns.length]);
+
+  const clipboardRef = useRef<{
+    values: string[][];
+    mode: 'copy' | 'cut';
+    sourceIds: string[];
+    sourceCols: string[];
+  } | null>(null);
+
+  const getSelectionBounds = useCallback(() => {
+    if (!selection) return null;
+    const minRow = Math.min(selection.startRow, selection.endRow);
+    const maxRow = Math.max(selection.startRow, selection.endRow);
+    const minCol = Math.min(selection.startCol, selection.endCol) === -1 ? 0 : Math.min(selection.startCol, selection.endCol);
+    const maxCol = Math.max(selection.startCol, selection.endCol) === -1 ? allColumns.length - 1 : Math.max(selection.startCol, selection.endCol);
+    return { minRow, maxRow, minCol, maxCol };
+  }, [selection, allColumns.length]);
+
+  const clearSelectionValues = useCallback(() => {
+    const bounds = getSelectionBounds();
+    if (!bounds) return;
+    const oldValues: Record<string, Record<string, any>> = {};
+    for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+      const dRow = paginatedDevotees[r];
+      if (!dRow?.id) continue;
+      for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+        const col = allColumns[c];
+        if (!col || STATIC_RESTRICTED_COLS.includes(col) || attendanceColumnMeta[col]) continue;
+        const oldVal = readCellValue(dRow, col);
+        if (oldVal === '') continue;
+        const dbField = colNameToDbField(col);
+        if (!oldValues[dRow.id]) oldValues[dRow.id] = {};
+        oldValues[dRow.id][dbField] = oldVal;
+        queueCellWrite(dRow.id, dbField, '');
+      }
+    }
+    if (Object.keys(oldValues).length > 0) {
+      recordActivity({ type: 'shiftCells', updates: {}, oldValues });
+    }
+  }, [getSelectionBounds, paginatedDevotees, allColumns, attendanceColumnMeta, queueCellWrite, recordActivity]);
+
+  const copySelectionToClipboard = useCallback((mode: 'copy' | 'cut') => {
+    const bounds = getSelectionBounds();
+    if (!bounds) return;
+    const values: string[][] = [];
+    const sourceIds: string[] = [];
+    const sourceCols: string[] = [];
+    for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+      const dRow = paginatedDevotees[r];
+      sourceIds.push(dRow?.id || '');
+      const rowVals: string[] = [];
+      for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+        const col = allColumns[c];
+        if (r === bounds.minRow) sourceCols.push(col);
+        rowVals.push(dRow ? readCellValue(dRow, col) : '');
+      }
+      values.push(rowVals);
+    }
+    clipboardRef.current = { values, mode, sourceIds, sourceCols };
+    navigator.clipboard?.writeText(values.map(row => row.join('\t')).join('\n')).catch(() => {});
+  }, [getSelectionBounds, paginatedDevotees, allColumns]);
+
+  const pasteClipboardAtSelection = useCallback(() => {
+    const clip = clipboardRef.current;
+    if (!clip || !selection) return;
+    const destStartRow = Math.min(selection.startRow, selection.endRow);
+    const destStartCol = Math.min(selection.startCol, selection.endCol) === -1 ? 0 : Math.min(selection.startCol, selection.endCol);
+
+    const oldValues: Record<string, Record<string, any>> = {};
+    const newValues: Record<string, Record<string, any>> = {};
+    clip.values.forEach((rowVals, rOffset) => {
+      const dRow = paginatedDevotees[destStartRow + rOffset];
+      if (!dRow?.id) return;
+      rowVals.forEach((val, cOffset) => {
+        const col = allColumns[destStartCol + cOffset];
+        if (!col || STATIC_RESTRICTED_COLS.includes(col) || attendanceColumnMeta[col]) return;
+        const dbField = colNameToDbField(col);
+        const finalVal = col === 'Contact No.' ? normalizePhoneNumber(val) : val;
+        const oldVal = readCellValue(dRow, col);
+        if (!oldValues[dRow.id]) oldValues[dRow.id] = {};
+        if (!newValues[dRow.id]) newValues[dRow.id] = {};
+        oldValues[dRow.id][dbField] = oldVal;
+        newValues[dRow.id][dbField] = finalVal;
+        queueCellWrite(dRow.id, dbField, finalVal);
+      });
+    });
+
+    if (Object.keys(oldValues).length > 0) {
+      recordActivity({ type: 'shiftCells', updates: newValues, oldValues });
+    }
+
+    if (clip.mode === 'cut') {
+      clip.sourceIds.forEach(id => {
+        if (!id) return;
+        clip.sourceCols.forEach(col => {
+          if (!col || STATIC_RESTRICTED_COLS.includes(col) || attendanceColumnMeta[col]) return;
+          queueCellWrite(id, colNameToDbField(col), '');
+        });
+      });
+      clipboardRef.current = null;
+    }
+  }, [selection, paginatedDevotees, allColumns, attendanceColumnMeta, queueCellWrite, recordActivity]);
+
+  const fillSelectionWithValue = useCallback((value: string) => {
+    const bounds = getSelectionBounds();
+    if (!bounds) return;
+    const oldValues: Record<string, Record<string, any>> = {};
+    const newValues: Record<string, Record<string, any>> = {};
+    for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+      const dRow = paginatedDevotees[r];
+      if (!dRow?.id) continue;
+      for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+        const col = allColumns[c];
+        if (!col || STATIC_RESTRICTED_COLS.includes(col) || attendanceColumnMeta[col]) continue;
+        const finalVal = col === 'Contact No.' ? normalizePhoneNumber(value) : value;
+        const oldVal = readCellValue(dRow, col);
+        if (oldVal === finalVal) continue;
+        const dbField = colNameToDbField(col);
+        if (!oldValues[dRow.id]) oldValues[dRow.id] = {};
+        if (!newValues[dRow.id]) newValues[dRow.id] = {};
+        oldValues[dRow.id][dbField] = oldVal;
+        newValues[dRow.id][dbField] = finalVal;
+        queueCellWrite(dRow.id, dbField, finalVal);
+      }
+    }
+    if (Object.keys(oldValues).length > 0) {
+      recordActivity({ type: 'shiftCells', updates: newValues, oldValues });
+    }
+  }, [getSelectionBounds, paginatedDevotees, allColumns, attendanceColumnMeta, queueCellWrite, recordActivity]);
 
   const onCommitAndMove = useCallback((dir: 'up' | 'down' | 'left' | 'right') => {
     setSelection(prev => {
@@ -2398,11 +2639,6 @@ const DatabaseManagement: React.FC = () => {
             else move(curRow + 1, 0, false);
           }
           return;
-        case 'Enter':
-          e.preventDefault();
-          if (e.shiftKey) move(curRow - 1, curCol, false);
-          else move(curRow + 1, curCol, false);
-          return;
         case 'Home':
           if (e.ctrlKey || e.metaKey) move(0, 0, e.shiftKey);
           else move(curRow, 0, e.shiftKey);
@@ -2426,16 +2662,100 @@ const DatabaseManagement: React.FC = () => {
           return;
         case 'F2':
           e.preventDefault();
+          setEditStartValue(undefined);
           setEditSignal(s => s + 1);
           return;
-        default:
+        case 'Delete':
+          e.preventDefault();
+          clearSelectionValues();
           return;
+        case 'Backspace':
+          e.preventDefault();
+          clearSelectionValues();
+          return;
+        case 'c':
+        case 'C':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            copySelectionToClipboard('copy');
+          }
+          return;
+        case 'x':
+        case 'X':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            copySelectionToClipboard('cut');
+          }
+          return;
+        case 'v':
+        case 'V':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            pasteClipboardAtSelection();
+          }
+          return;
+        case 'z':
+        case 'Z':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleUndo();
+          }
+          return;
+        case 'y':
+        case 'Y':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleRedo();
+          }
+          return;
+        case 'd':
+        case 'D':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const topRow = Math.min(selection.startRow, selection.endRow);
+            const srcDevotee = paginatedDevotees[topRow];
+            const srcCol = allColumns[curCol];
+            if (srcDevotee && srcCol) fillSelectionWithValue(readCellValue(srcDevotee, srcCol));
+          }
+          return;
+        case 'r':
+        case 'R':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const leftCol = Math.min(selection.startCol, selection.endCol) === -1 ? 0 : Math.min(selection.startCol, selection.endCol);
+            const srcDevotee = paginatedDevotees[curRow];
+            const srcCol = allColumns[leftCol];
+            if (srcDevotee && srcCol) fillSelectionWithValue(readCellValue(srcDevotee, srcCol));
+          }
+          return;
+        case 'Enter':
+          e.preventDefault();
+          if (e.ctrlKey || e.metaKey) {
+            const activeDevotee = paginatedDevotees[curRow];
+            const activeCol = allColumns[curCol];
+            if (activeDevotee && activeCol) fillSelectionWithValue(readCellValue(activeDevotee, activeCol));
+            return;
+          }
+          if (e.shiftKey) move(curRow - 1, curCol, false);
+          else move(curRow + 1, curCol, false);
+          return;
+        default:
+          break;
+      }
+
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+        const col = allColumns[curCol];
+        if (col && !STATIC_RESTRICTED_COLS.includes(col) && !attendanceColumnMeta[col]) {
+          e.preventDefault();
+          setEditStartValue(e.key);
+          setEditSignal(s => s + 1);
+        }
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selection, paginatedDevotees.length, allColumns.length]);
+  }, [selection, paginatedDevotees, allColumns, attendanceColumnMeta, clearSelectionValues, copySelectionToClipboard, pasteClipboardAtSelection, fillSelectionWithValue, handleUndo, handleRedo]);
 
   const handleColumnDragStart = (e: React.DragEvent, idx: number) => {
     setDraggedColumnIdx(idx);
@@ -3245,7 +3565,7 @@ const DatabaseManagement: React.FC = () => {
                     {(isOwner || isMentor) && <th className="px-8 py-5 w-24 text-center">Actions</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-stone-50">
+                <tbody className="divide-y divide-[#D4D4D4]">
                   {rowVirtualizer.getVirtualItems().length > 0 && rowVirtualizer.getVirtualItems()[0].start > 0 && (
                     <tr><td style={{ height: `${rowVirtualizer.getVirtualItems()[0].start}px` }} colSpan={allColumns.length + 2} /></tr>
                   )}
@@ -3293,6 +3613,7 @@ const DatabaseManagement: React.FC = () => {
                         handleCellContextMenu={handleCellContextMenu}
                         handleToggleAttendance={handleToggleAttendance}
                         editSignal={editSignal}
+                        editStartValue={editStartValue}
                         onCommitAndMove={onCommitAndMove}
                       />
                     );
