@@ -2980,6 +2980,7 @@ const DatabaseManagement: React.FC = () => {
             templeUsers,
             customColumns,
             templeId: profile?.templeId || profile?.uid || '',
+            userId: profile?.uid,
             onProgress: (p) => setImportProgress(p)
           });
 

@@ -94,14 +94,11 @@ export function subscribeToEvent(eventId: string, callback: (event: Event | null
 }
 
 export function subscribeToVisibleEvents(templeId: string, callback: (events: Event[]) => void): Unsubscribe {
-  const q = query(
-    collection(db, 'events'),
-    where('templeId', '==', templeId),
-    where('isDeleted', '==', false),
-    where('isPublic', '==', true)
-  );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Event)));
+  return onSnapshot(collection(db, 'events'), (snap) => {
+    const events = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Event))
+      .filter((e) => e.templeId === templeId && !e.isDeleted && e.isPublic === true);
+    callback(events);
   });
 }
 

@@ -1,7 +1,8 @@
 import { db } from '../services/firebase';
-import { collection, doc, writeBatch } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { Devotee } from '../types';
 import { normalizePhoneNumber } from './utils';
+import { getEventVisibilityDefaults } from '../services/eventVisibility';
 
 export interface ImportProgress {
   step: string;
@@ -128,6 +129,7 @@ interface RunDbImportParams {
   templeUsers: any[];
   customColumns: string[];
   templeId: string;
+  userId?: string;
   onProgress?: (progress: ImportProgress) => void;
 }
 
@@ -143,7 +145,7 @@ interface RunDbImportParams {
  *   processing continues.
  */
 export async function runDatabaseImport(params: RunDbImportParams): Promise<DbImportResult> {
-  const { rows, devotees, templeUsers, customColumns, templeId, onProgress } = params;
+  const { rows, devotees, templeUsers, customColumns, templeId, userId, onProgress } = params;
   const startTime = performance.now();
 
   const report: DbImportReport = {
@@ -212,6 +214,39 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
     }
   };
 
+  let importedAttendanceEventId: string | null = null;
+  let importedAttendanceEventEnsured = false;
+  const ensureImportedAttendanceEvent = async (): Promise<string> => {
+    if (importedAttendanceEventEnsured && importedAttendanceEventId) return importedAttendanceEventId;
+    importedAttendanceEventEnsured = true;
+    const existingSnap = await getDocs(query(
+      collection(db, 'events'),
+      where('templeId', '==', templeId),
+      where('importedFromCsv', '==', true),
+      where('isDeleted', '==', false)
+    ));
+    if (!existingSnap.empty) {
+      importedAttendanceEventId = existingSnap.docs[0].id;
+      return importedAttendanceEventId;
+    }
+    const evRef = doc(collection(db, 'events'));
+    await writeBatch(db).set(evRef, {
+      title: 'Imported Attendance',
+      date: new Date().toISOString(),
+      description: 'Auto-created to represent attendance counts imported via the Database CSV import.',
+      mediaUrl: '',
+      ...getEventVisibilityDefaults(),
+      createdBy: userId || null,
+      templeId,
+      createdAt: new Date().toISOString(),
+      isAttendanceOpen: false,
+      isDeleted: false,
+      importedFromCsv: true
+    }).commit();
+    importedAttendanceEventId = evRef.id;
+    return importedAttendanceEventId;
+  };
+
   const startProcessing = performance.now();
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -256,7 +291,10 @@ export async function runDatabaseImport(params: RunDbImportParams): Promise<DbIm
       if (attendanceRaw !== undefined && attendanceRaw !== '') {
         const match = attendanceRaw.toString().match(/-?\d+(\.\d+)?/);
         const parsed = match ? parseFloat(match[0]) : NaN;
-        if (!isNaN(parsed)) mappedData.attendanceCount = parsed;
+        if (!isNaN(parsed)) {
+          mappedData.attendanceCount = parsed;
+          await ensureImportedAttendanceEvent();
+        }
       }
 
       // Facilitator/Mentor: match against known app users only. If the CSV

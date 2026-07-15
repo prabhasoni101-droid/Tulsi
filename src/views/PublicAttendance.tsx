@@ -343,11 +343,33 @@ export default function PublicAttendance() {
         };
 
         if (existingDevoteeId) {
-          const updates: Record<string, unknown> = { ...writePayload };
+          const existingSnap = await transaction.get(devoteeRef);
+          const existingData: Record<string, any> = existingSnap.exists() ? existingSnap.data() : {};
+
+          const updates: Record<string, unknown> = {};
+          Object.keys(writePayload).forEach((key) => {
+            const incoming = (writePayload as Record<string, any>)[key];
+            const current = existingData[key];
+            if (key === '_attendanceEventId' || key === 'updatedAt') {
+              updates[key] = incoming;
+              return;
+            }
+            const incomingIsEmpty = incoming === undefined || incoming === null || incoming === '';
+            if (incomingIsEmpty) {
+              return;
+            }
+            if (current === incoming) {
+              return;
+            }
+            updates[key] = incoming;
+          });
+
           if (!attSnap.exists()) {
             updates.attendanceCount = increment(1);
           }
-          transaction.update(devoteeRef, updates);
+          if (Object.keys(updates).length > 0) {
+            transaction.update(devoteeRef, updates);
+          }
         } else {
           transaction.set(devoteeRef, {
             ...writePayload,
