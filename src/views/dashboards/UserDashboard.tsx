@@ -91,7 +91,7 @@ const UserDashboard = () => {
     let unsubscribeA = () => {};
   
     if (profile.role === 'OWNER' || profile.role === 'MENTOR') {
-      unsubscribeE = onSnapshot(collection(db, 'events'), (snapshot) => {
+       unsubscribeE = onSnapshot(query(collection(db, 'events'), where('templeId', '==', profile.templeId)), (snapshot) => {
         const allEvents = snapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Event))
           .filter(e => e.templeId === profile.templeId && !e.isDeleted);

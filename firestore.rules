@@ -163,7 +163,8 @@ service cloud.firestore {
       allow get: if resource.data.isAttendanceOpen == true
         || resource.data.isPublic == true
         || (isSignedIn() && sameTemple(resource.data.templeId));
-      allow list: if isSignedIn() && isActiveUser() && resource.data.templeId == userTempleId();
+      allow list: if (isSignedIn() && isActiveUser() && resource.data.templeId == userTempleId())
+        || resource.data.isPublic == true;
       allow create: if isOwner() && isValidEvent(incoming())
         && incoming().templeId == userTempleId();
       allow update: if isOwner() && sameTemple(resource.data.templeId)

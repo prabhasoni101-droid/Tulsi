@@ -94,19 +94,25 @@ export function subscribeToEvent(eventId: string, callback: (event: Event | null
 }
 
 export function subscribeToVisibleEvents(templeId: string, callback: (events: Event[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, 'events'), (snap) => {
+  const q = query(
+    collection(db, 'events'),
+    where('templeId', '==', templeId),
+    where('isPublic', '==', true)
+  );
+  return onSnapshot(q, (snap) => {
     const events = snap.docs
       .map((d) => ({ id: d.id, ...d.data() } as Event))
-      .filter((e) => e.templeId === templeId && !e.isDeleted && e.isPublic === true);
+      .filter((e) => !e.isDeleted);
     callback(events);
   });
 }
 
 export function subscribeToAllTempleEvents(templeId: string, callback: (events: Event[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, 'events'), (snap) => {
+  const q = query(collection(db, 'events'), where('templeId', '==', templeId));
+  return onSnapshot(q, (snap) => {
     const events = snap.docs
       .map((d) => ({ id: d.id, ...d.data() } as Event))
-      .filter((e) => e.templeId === templeId && !e.isDeleted);
+      .filter((e) => !e.isDeleted);
     callback(events);
   });
 }
