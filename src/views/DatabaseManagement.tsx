@@ -760,16 +760,17 @@ const DatabaseManagement: React.FC = () => {
   // Metadata for duplicated "Attendance" columns: maps a column name -> the fixed
   // event it snapshots. Kept OUT of devotee Firestore docs on purpose, so delete
   // works cleanly and never touches the real "Attendance" column.
-  const [attendanceColumnMeta, setAttendanceColumnMeta] = useState<Record<string, { eventId: string, eventTitle: string }>>({});
-  const [attendanceColumnMaps, setAttendanceColumnMaps] = useState<Record<string, Record<string, boolean>>>({});
+  const [attendanceColumnMeta, setAttendanceColumnMeta] = useState<Record<string, { eventId: string, eventTitle: string }>({} as Record<string, { eventId: string; eventTitle: string }>);
+  const [attendanceColumnMaps, setAttendanceColumnMaps] = useState<Record<string, Record<string, boolean>>>({} as Record<string, Record<string, boolean>>);
 
   useEffect(() => {
     if (profile?.templeId) {
-      const saved = localStorage.getItem(`attendance_cols_${profile.templeId}`);
+      const saved = localStorage.getItem(`attendance_cols_${profile?.templeId}`);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed && typeof parsed === 'object') setAttendanceColumnMeta(parsed);
+          if (parsed && typeof parsed === 'object')
+            setAttendanceColumnMeta(parsed as Record<string, { eventId: string; eventTitle: string }>);
         } catch (e) {
           console.error("Failed to parse saved attendance columns", e);
         }
