@@ -243,7 +243,7 @@ service cloud.firestore {
       allow write: if isOwner() && userTempleId() == templeId;
 
       match /history/{historyId} {
-        allow read, write: if isOwner() && userTempleId() == templeId;
+        allow read, write: if (isOwner() || isMentor()) && userTempleId() == templeId;
       }
     }
 

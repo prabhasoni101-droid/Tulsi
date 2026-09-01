@@ -22,6 +22,9 @@ import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } fr
 import { runDatabaseImport, ImportProgress, DbImportReport } from '../lib/csvImportEngine';
 import Papa from 'papaparse';
 import { useNavigate, Link } from 'react-router-dom';
+import { getCachedDevotees, saveCachedDevotees, removeCachedDevoteesBatch } from '../lib/dbCache';
+import { runBulkOperation, cellWriteQueue } from '../lib/bulkOperationEngine';
+import { normalizeDevoteeDoc, normalizeDevoteeList } from '../lib/dataNormalizer';
 
 const BASE_COLUMNS = ['Name', 'Age', 'Gender', 'Date of Birth', 'Address', 'Institute', 'Attendance', 'Contact No.', 'Mentor', 'Chanting', 'Facilitator', 'Profile'];
 
@@ -517,19 +520,17 @@ const MemoizedTableRow = React.memo((props: any) => {
         if (col === 'Attendance') {
           if (selectedDbEventId === 'NONE') {
             return (
-              <td key={col} className="p-0 border-r border-[#D4D4D4] font-mono">
-                <EditableCell 
-                  id={d.id!} 
-                  field={col} 
-                  initialValue={val} 
-                  onSave={handleCellSave}
-                  onMouseDown={handleMouseDown}
-                  onMouseEnter={handleMouseEnter}
-                  onContextMenu={handleCellContextMenu}
-                  isSelected={isCellSelected(rIndex, cIndex)}
-                  rowIdx={rIndex}
-                  colIdx={cIndex}
-                />
+              <td 
+                key={col} 
+                data-row-idx={rIndex}
+                data-col-idx={cIndex}
+                className={cn("px-6 py-3 border-r border-[#D4D4D4] text-center font-mono text-xs font-bold text-stone-500", isCellSelected(rIndex, cIndex) && "bg-orange-100/50")}
+                title="Select an event in the Attendance column header dropdown to view or toggle presence"
+                onMouseDown={() => handleMouseDown(rIndex, cIndex)}
+                onMouseEnter={() => handleMouseEnter(rIndex, cIndex)}
+                onContextMenu={(e) => handleCellContextMenu(e, rIndex, cIndex)}
+              >
+                {val}
               </td>
             );
           }
@@ -760,8 +761,8 @@ const DatabaseManagement: React.FC = () => {
   // Metadata for duplicated "Attendance" columns: maps a column name -> the fixed
   // event it snapshots. Kept OUT of devotee Firestore docs on purpose, so delete
   // works cleanly and never touches the real "Attendance" column.
-  const [attendanceColumnMeta, setAttendanceColumnMeta] = useState<Record<string, { eventId: string, eventTitle: string }>({} as Record<string, { eventId: string; eventTitle: string }>);
-  const [attendanceColumnMaps, setAttendanceColumnMaps] = useState<Record<string, Record<string, boolean>>>({} as Record<string, Record<string, boolean>>);
+  const [attendanceColumnMeta, setAttendanceColumnMeta] = useState<Record<string, { eventId: string; eventTitle: string }>>({});
+  const [attendanceColumnMaps, setAttendanceColumnMaps] = useState<Record<string, Record<string, boolean>>>({});
 
   useEffect(() => {
     if (profile?.templeId) {
@@ -786,7 +787,7 @@ const DatabaseManagement: React.FC = () => {
 
   // Live P/A map for every event referenced by a duplicated Attendance column
   useEffect(() => {
-    const eventIds = Array.from(new Set(Object.values(attendanceColumnMeta).map(m => m.eventId)));
+    const eventIds = Array.from(new Set(Object.values(attendanceColumnMeta).map((m: any) => m.eventId)));
     if (eventIds.length === 0) return;
     const unsubs = eventIds.map(eventId => 
       onSnapshot(collection(db, `events/${eventId}/attendance`), snap => {
@@ -810,7 +811,7 @@ const DatabaseManagement: React.FC = () => {
 
   // Persistence logic for history
   useEffect(() => {
-    if (!profile?.templeId) return;
+    if (!profile?.templeId || (!isOwner && !isMentor)) return;
 
     // Use subcollection to avoid requiring composite indexes for orderBy + where
     const historyQuery = query(
@@ -846,17 +847,45 @@ const DatabaseManagement: React.FC = () => {
       setHistory(hs);
       setRedoStack(rs);
     }, (error) => {
-      console.error("History listener error:", error);
+      // Suppress benign permission error if role changed
+      if (!error.message?.includes('permission-denied')) {
+        console.error("History listener error:", error);
+      }
     });
 
     return () => unsubHistory();
-  }, [profile?.templeId]);
+  }, [profile?.templeId, isOwner, isMentor]);
 
   const recordActivity = useCallback(async (action: any) => {
-    if (!profile?.templeId) return;
+    if (!profile?.templeId || (!isOwner && !isMentor)) return;
     try {
+      // Sanitize payload to prevent Firestore 1MB document size limit error
+      const sanitizedAction = { ...action };
+      const serialized = JSON.stringify(sanitizedAction);
+
+      if (serialized.length > 250000) {
+        if (sanitizedAction.oldValues && typeof sanitizedAction.oldValues === 'object') {
+          const keys = Object.keys(sanitizedAction.oldValues);
+          sanitizedAction.itemCount = keys.length;
+          sanitizedAction.oldValuesNote = `${keys.length} items modified (raw details omitted for 1MB document limit safety)`;
+          delete sanitizedAction.oldValues;
+        }
+        if (sanitizedAction.updates && typeof sanitizedAction.updates === 'object') {
+          const keys = Object.keys(sanitizedAction.updates);
+          sanitizedAction.updateCount = keys.length;
+          delete sanitizedAction.updates;
+        }
+        if (Array.isArray(sanitizedAction.ids)) {
+          sanitizedAction.idCount = sanitizedAction.ids.length;
+          sanitizedAction.ids = sanitizedAction.ids.slice(0, 50);
+        }
+        if (sanitizedAction.addedData) {
+          delete sanitizedAction.addedData;
+        }
+      }
+
       await addDoc(collection(db, 'temples', profile.templeId, 'history'), {
-        ...action,
+        ...sanitizedAction,
         templeId: profile.templeId,
         userId: profile.uid,
         userName: profile.displayName || 'Anonymous',
@@ -866,7 +895,7 @@ const DatabaseManagement: React.FC = () => {
     } catch (e) {
       console.error("Failed to log activity:", e);
     }
-  }, [profile]);
+  }, [profile, isOwner, isMentor]);
 
   const editQueueRef = useRef<Map<string, Record<string, any>>>(new Map());
   const editFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1109,17 +1138,8 @@ const DatabaseManagement: React.FC = () => {
         }
       }
 
-      try {
-        await updateDoc(doc(db, 'devotees', id), { 
-          [dbField]: finalVal,
-          updatedAt: serverTimestamp()
-        });
-      } catch (err: any) {
-        if (err.code !== 'not-found' && !err.message?.includes('No document to update')) {
-          throw err;
-        }
-        console.warn(`Document ${id} not found, skipping update.`);
-      }
+      // Queue through cellWriteQueue to batch single-cell writes into safe 400-op Firestore batches
+      cellWriteQueue.queueEdit(id, { [dbField]: finalVal });
     } catch (error) {
       console.error('Update error:', error);
     }
@@ -1155,18 +1175,21 @@ const DatabaseManagement: React.FC = () => {
         recordActivity({ type: 'deleteColumn', name: colName, oldValues });
       }
 
-      const batch = writeBatch(db);
-      devoteesToUpdate.forEach(d => {
-        batch.set(doc(db, 'devotees', d.id!), {
-          [colName]: deleteField()
-        }, { merge: true });
+      await runBulkOperation<Devotee>({
+        items: devoteesToUpdate,
+        batchSize: 400,
+        processChunk: async (chunk: Devotee[]) => {
+          const batch = writeBatch(db);
+          chunk.forEach((d: Devotee) => {
+            batch.set(doc(db, 'devotees', d.id!), {
+              [colName]: deleteField()
+            }, { merge: true });
+          });
+          await batch.commit();
+        }
       });
-      await batch.commit();
 
       if (profile?.templeId) {
-        // Same fix as handleDuplicateColumn: temples/{templeId} is never
-        // pre-created, so updateDoc() would throw "No document to update"
-        // here too. setDoc with merge:true is safe whether the doc exists or not.
         await setDoc(doc(db, 'temples', profile.templeId), {
           databaseConfig: { customColumns: updatedCustomColumns }
         }, { merge: true });
@@ -1701,6 +1724,16 @@ const DatabaseManagement: React.FC = () => {
   useEffect(() => {
     if (!profile?.templeId) return;
 
+    let isMounted = true;
+
+    // Load instantly from IndexedDB local cache (<20ms, 0 Firestore reads on initial load)
+    getCachedDevotees(profile.templeId).then((cached) => {
+      if (isMounted && cached && cached.length > 0) {
+        setDevotees(cached);
+        setLoading(false);
+      }
+    });
+
     const q = query(
       collection(db, 'devotees'),
       where('templeId', '==', profile.templeId)
@@ -1713,28 +1746,35 @@ const DatabaseManagement: React.FC = () => {
         }))
         .filter((d: any) => !d.isDeleted) as Devotee[];
       
-      setDevotees(data);
+      if (isMounted) {
+        setDevotees(data);
+        setLoading(false);
 
-      const columns = new Set<string>();
-      const internalKeys = [
-        'id', 'name', 'age', 'attendanceCount', 'contact', 'mentor', 'chanting', 'facilitatorId',
-        'templeId', 'isDeleted', 'deletedAt', 'duplicateType', 'duplicateHandled',
-        'createdAt', 'facilitationResponse', 'facilitationResponseText', 'facilitationNotes',
-        'address', 'gender', 'institute', 'dob', 'facilitatorName', 'assignedCount', 
-        'sheetName', 'isDuplicate', 'duplicateCreatedAt', 'Age', 'Name', 'Mentor', 'Chanting', 'Contact No.'
-      ];
+        // Async update IndexedDB cache
+        saveCachedDevotees(data).catch(() => {});
 
-      data.forEach(d => {
-        Object.keys(d).forEach(key => {
-          if (!internalKeys.includes(key) && !BASE_COLUMNS.includes(key)) {
-            columns.add(key);
-          }
+        const columns = new Set<string>();
+        const internalKeys = [
+          'id', 'name', 'age', 'attendanceCount', 'contact', 'mentor', 'chanting', 'facilitatorId',
+          'templeId', 'isDeleted', 'deletedAt', 'duplicateType', 'duplicateHandled',
+          'createdAt', 'facilitationResponse', 'facilitationResponseText', 'facilitationNotes',
+          'address', 'gender', 'institute', 'dob', 'facilitatorName', 'assignedCount', 
+          'sheetName', 'isDuplicate', 'duplicateCreatedAt', 'Age', 'Name', 'Mentor', 'Chanting', 'Contact No.'
+        ];
+
+        data.forEach(d => {
+          Object.keys(d).forEach(key => {
+            if (!internalKeys.includes(key) && !BASE_COLUMNS.includes(key)) {
+              columns.add(key);
+            }
+          });
         });
-      });
-      setCustomColumns(Array.from(columns));
+        setCustomColumns(Array.from(columns));
+      }
     });
 
     const eventsUnsubscribe = onSnapshot(query(collection(db, 'events'), where('templeId', '==', profile.templeId)), (snap) => {
+      if (!isMounted) return;
       const validCount = snap.docs.filter(d => !(d.data() as any).isDeleted).length;
       setTotalEvents(validCount);
     });
@@ -1744,8 +1784,8 @@ const DatabaseManagement: React.FC = () => {
       where('templeId', '==', profile.templeId)
     );
     const usersUnsubscribe = onSnapshot(usersQuery, (snap) => {
+      if (!isMounted) return;
       const users = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
-      // Use a Map to keep only unique uids and names (case-insensitive deduplication for name)
       const uniqueUsers: any[] = [];
       const seenNames = new Set();
       
@@ -1761,6 +1801,7 @@ const DatabaseManagement: React.FC = () => {
     });
 
     return () => {
+      isMounted = false;
       unsubscribe();
       eventsUnsubscribe();
       usersUnsubscribe();
@@ -1920,7 +1961,7 @@ const DatabaseManagement: React.FC = () => {
     }
 
     return result;
-  }, [processedDevotees, searchTerm, sortConfig, showDuplicatesOnly, duplicateFilterType]);
+  }, [processedDevotees, debouncedSearchTerm, sortConfig, showDuplicatesOnly, duplicateFilterType]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -1946,17 +1987,28 @@ const DatabaseManagement: React.FC = () => {
     const maxRow = Math.max(startRow, endRow);
     
     const devoteesToDelete = paginatedDevotees.slice(minRow, maxRow + 1);
+    const ids = devoteesToDelete.map(d => d.id!).filter(Boolean);
+    if (ids.length === 0) return;
     
     openConfirm('Bulk Delete', `Are you sure you want to delete ${devoteesToDelete.length} records?`, async () => {
-      const batch = writeBatch(db);
-      const ids = devoteesToDelete.map(d => d.id!);
-      devoteesToDelete.forEach(d => {
-        batch.update(doc(db, 'devotees', d.id!), { 
-          isDeleted: true,
-          deletedAt: serverTimestamp()
-        });
+      removeCachedDevoteesBatch(ids).catch(() => {});
+      setDevotees(prev => prev.filter(d => !ids.includes(d.id!)));
+
+      await runBulkOperation<string>({
+        items: ids,
+        batchSize: 400,
+        processChunk: async (chunk: string[]) => {
+          const batch = writeBatch(db);
+          chunk.forEach((id: string) => {
+            batch.update(doc(db, 'devotees', id), { 
+              isDeleted: true,
+              deletedAt: serverTimestamp()
+            });
+          });
+          await batch.commit();
+        }
       });
-      await batch.commit();
+
       recordActivity({ type: 'bulkDeleteDevotees', ids });
       setSelection(null);
       setContextMenu(null);
@@ -1980,23 +2032,32 @@ const DatabaseManagement: React.FC = () => {
       return isNaN(t) ? Date.now() : t;
     };
 
-    const batch = writeBatch(db);
     const newIds: string[] = [];
-    [...rowsToDuplicate].reverse().forEach((row, i) => {
-      const src = devoteesRef.current.find(d => d.id === row.id);
-      if (!src) return;
-      const { id, ...rest } = src as any;
-      const ref = doc(collection(db, 'devotees'));
-      newIds.push(ref.id);
-      const srcTime = getTimeMs((src as any).createdAt);
-      batch.set(ref, {
-        ...rest,
-        isDeleted: false,
-        createdAt: new Date(srcTime - (i + 1)).toISOString(),
-        updatedAt: serverTimestamp()
-      });
+    const itemsToProcess = [...rowsToDuplicate].reverse();
+
+    await runBulkOperation({
+      items: itemsToProcess,
+      batchSize: 400,
+      processChunk: async (chunk) => {
+        const batch = writeBatch(db);
+        chunk.forEach((row, i) => {
+          const src = devoteesRef.current.find(d => d.id === row.id);
+          if (!src) return;
+          const { id, ...rest } = src as any;
+          const ref = doc(collection(db, 'devotees'));
+          newIds.push(ref.id);
+          const srcTime = getTimeMs((src as any).createdAt);
+          batch.set(ref, {
+            ...rest,
+            isDeleted: false,
+            createdAt: new Date(srcTime - (i + 1)).toISOString(),
+            updatedAt: serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
     });
-    await batch.commit();
+
     recordActivity({ type: 'addRows', ids: newIds });
     setSelection(null);
     setContextMenu(null);

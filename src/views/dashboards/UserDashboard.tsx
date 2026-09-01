@@ -10,7 +10,7 @@ import { cn, normalizePhoneNumber, sanitizeMobileInput, isValidMobileNumber } fr
 // NEW
 import ContactLink from '../../components/ContactLink';
 import { subscribeToVisibleEvents, subscribeToEvent } from '../../services/eventVisibility';
-import { profile } from 'console';
+
 
 const UserDashboard = () => {
   const { profile } = useAuth();
@@ -182,10 +182,6 @@ const UserDashboard = () => {
         isMounted = false;
         eventDocUnsubs.forEach(unsub => unsub());
         eventDocUnsubs.clear();
-        originalUnsubA();
-      };
-      unsubscribeA = () => {
-        isMounted = false;
         originalUnsubA();
       };
     }
