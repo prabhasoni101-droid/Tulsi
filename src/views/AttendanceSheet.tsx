@@ -267,15 +267,19 @@ const AttendanceSheet = () => {
       
       setEvents(eventData);
     }, (error) => {
-      console.error("Snapshot error:", error);
+      if (error?.code !== 'permission-denied') console.error("[AttendanceSheet] events listener error:", error);
     });
 
     const unsubDevotees = onSnapshot(query(collection(db, 'devotees'), where('templeId', '==', profile.templeId)), (snap) => {
       setDevotees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[AttendanceSheet] devotees listener error:", error);
     });
 
     const unsubTemplates = onSnapshot(query(collection(db, 'templates'), where('templeId', '==', profile.templeId)), (snap) => {
       setTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Template)));
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[AttendanceSheet] templates listener error:", error);
     });
 
     return () => {
@@ -314,6 +318,8 @@ const AttendanceSheet = () => {
     const unsubAttendance = onSnapshot(collection(db, `events/${selectedEventId}/attendance`), (snap) => {
       const records = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAttendanceRecords(records);
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[AttendanceSheet] attendance listener error:", error);
     });
     return unsubAttendance;
   }, [selectedEventId]);

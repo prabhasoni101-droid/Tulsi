@@ -87,6 +87,8 @@ const EventDetail = () => {
       });
       setAttendance(data);
       setAttendanceStore(store);
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[EventDetail] attendance listener error:", error);
     });
 
     // Fetch Assignments
@@ -101,6 +103,8 @@ const EventDetail = () => {
     if (qA) {
       unsubAssignments = onSnapshot(qA, (snapshot) => {
         setAssignments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CallingAssignment)));
+      }, (error) => {
+        if (error?.code !== 'permission-denied') console.error("[EventDetail] assignments listener error:", error);
       });
     }
 
@@ -110,6 +114,8 @@ const EventDetail = () => {
       unsubDevotees = onSnapshot(qD, (snap) => {
         let devs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee));
         setDevotees(devs);
+      }, (error) => {
+        if (error?.code !== 'permission-denied') console.error("[EventDetail] devotees listener error:", error);
       });
     }
 
@@ -123,6 +129,8 @@ const EventDetail = () => {
         // Sevaks assigned on old/past events still show their real name instead
         // of "Unknown". Only exclude deleted users from the active assignment list.
         setAppUsers(usrs);
+      }, (error) => {
+        if (error?.code !== 'permission-denied') console.error("[EventDetail] users listener error:", error);
       });
     }
 
@@ -157,6 +165,8 @@ const EventDetail = () => {
       const map: Record<string, boolean> = {};
       snap.forEach(d => { map[d.id] = true; });
       setAssignAttendanceMap(map);
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[EventDetail] assign-attendance listener error:", error);
     });
     return () => unsub();
   }, [selectedAssignEventId]);

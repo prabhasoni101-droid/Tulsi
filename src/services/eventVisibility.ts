@@ -90,6 +90,8 @@ export async function updateEventFields(eventId: string, fields: Record<string, 
 export function subscribeToEvent(eventId: string, callback: (event: Event | null) => void): Unsubscribe {
   return onSnapshot(doc(db, 'events', eventId), (snap) => {
     callback(snap.exists() ? ({ id: snap.id, ...snap.data() } as Event) : null);
+  }, (error) => {
+    if (error?.code !== 'permission-denied') console.error("[eventVisibility] event listener error:", error);
   });
 }
 
@@ -104,6 +106,8 @@ export function subscribeToVisibleEvents(templeId: string, callback: (events: Ev
       .map((d) => ({ id: d.id, ...d.data() } as Event))
       .filter((e) => !e.isDeleted);
     callback(events);
+  }, (error) => {
+    if (error?.code !== 'permission-denied') console.error("[eventVisibility] visible events listener error:", error);
   });
 }
 
@@ -114,5 +118,7 @@ export function subscribeToAllTempleEvents(templeId: string, callback: (events: 
       .map((d) => ({ id: d.id, ...d.data() } as Event))
       .filter((e) => !e.isDeleted);
     callback(events);
+  }, (error) => {
+    if (error?.code !== 'permission-denied') console.error("[eventVisibility] all temple events listener error:", error);
   });
 }

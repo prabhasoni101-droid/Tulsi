@@ -102,11 +102,9 @@ const OwnerDashboard = () => {
     const unsubE = onSnapshot(qE, (snapshot) => {
       const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Event));
       setEvents(all.filter(e => !e.isDeleted));
-      // Events permanently removed from the History tab are marked isArchived
-      // (see History.tsx handlePermanentDelete) rather than hard-deleted, so we
-      // must exclude them here too — otherwise they keep showing up forever in
-      // the "Import Calling List" picker even after being permanently deleted.
       setDeletedEvents(all.filter(e => e.isDeleted && !(e as any).isArchived));
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[OwnerDashboard] events listener error:", error);
     });
 
     const qU = query(collection(db, 'users'), where('templeId', '==', templeId));
@@ -116,16 +114,22 @@ const OwnerDashboard = () => {
           .map(d => ({ uid: d.id, ...d.data() } as UserProfile))
           .filter(u => !u.isDeleted)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[OwnerDashboard] users listener error:", error);
     });
 
     const qD = query(collection(db, 'devotees'), where('templeId', '==', templeId));
     const unsubD = onSnapshot(qD, (snapshot) => {
       setAllDevotees(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[OwnerDashboard] devotees listener error:", error);
     });
 
     const qT = query(collection(db, 'templates'), where('templeId', '==', templeId));
     const unsubT = onSnapshot(qT, (snap) => {
       setTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[OwnerDashboard] templates listener error:", error);
     });
 
     return () => {

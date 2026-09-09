@@ -39,6 +39,10 @@ const DuplicateConflictBell: React.FC<{ templeId: string }> = ({ templeId }) => 
       syncConflictsFromDevotees(templeId, devotees).catch((err) =>
         console.error('Failed to sync duplicate conflicts:', err)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') {
+        console.error('[DuplicateConflictBell] devotees listener error:', error);
+      }
     });
     return () => unsub();
   }, [templeId]);
@@ -56,6 +60,7 @@ const DuplicateConflictBell: React.FC<{ templeId: string }> = ({ templeId }) => 
   // resolved multiple times before its onSnapshot listener removes it here.
   const resolvingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (conflicts.length === 0) return;
     const interval = setInterval(() => {
       const t = Date.now();
       setNowMs(t);

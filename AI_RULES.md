@@ -20,3 +20,5 @@
 18. After implementation, run targeted tests plus regression checks for identity, permissions, deletion/restore, calling, attendance, imports, and tenant isolation.
 19. If a new product decision is made, update the PDR and its changelog in the same change set.
 20. Before finalizing, report changed files, behavioral changes, migration impact, security impact, performance impact, and remaining risks.
+21. PERMANENT RULE — MANDATORY CHUNKED / INFINITE SCROLL LOADING WITH LOADING RING: Never load or render thousands of records into the DOM in a single synchronous pass. All list, grid, and history views MUST use chunked/incremental loading (e.g. 30-100 initial items, expanding on scroll). When the user scrolls rapidly or while additional chunks are loading, a visible loading spinner ring MUST be displayed until the next chunk is rendered. This rule is PERMANENT and MUST NOT be removed or disabled by any AI assistant unless explicitly commanded by the user with extraordinary confirmation.
+

@@ -4,8 +4,8 @@ import { db } from '../services/firebase';
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs, runTransaction, increment } from 'firebase/firestore';
 import { getFirestoreErrorMessage } from '../lib/firestoreErrors';
 import { Devotee, Event, UserProfile } from '../types';
-import { 
-  Check, 
+import {
+  Check,
   Calendar,
   Lock,
   UserCheck,
@@ -92,11 +92,11 @@ export default function PublicAttendance() {
           const qUsers = query(collection(db, 'users'), where('templeId', '==', eventData.templeId));
           const userSnap = await getDocs(qUsers);
           const rawUsers = userSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-          
+
           // Deduplicate users by UID and then by case-insensitive name
           const uniqueUsers: UserProfile[] = [];
           const seenNames = new Set();
-          
+
           rawUsers.forEach(u => {
             if (u.isDeleted) return;
             const nameKey = (u.displayName || u.email || '').toLowerCase().trim();
@@ -105,16 +105,16 @@ export default function PublicAttendance() {
               uniqueUsers.push(u);
             }
           });
-          
+
           const users = uniqueUsers;
-          
+
           setTempleUsers(users.filter(u => u.role !== 'MENTOR'));
           setMentors(users.filter(u => u.role === 'MENTOR'));
         }
       }
       setLoading(false);
     }, (err) => {
-      console.error("Event error:", err);
+      if (err?.code !== 'permission-denied') console.error("[PublicAttendance] event listener error:", err);
       setLoading(false);
     });
 
@@ -268,7 +268,7 @@ export default function PublicAttendance() {
     // where a fast second tap on a different bar submits the wrong person's
     // details before React finishes updating `form`.
     const sourceData = profileOverride ?? form;
-    
+
     if (!(event as any).isAttendanceOpen) {
       alert("Attendance is currently closed for this event.");
       return;
@@ -290,7 +290,7 @@ export default function PublicAttendance() {
       alert("Please enter a valid 10-digit mobile number.");
       return;
     }
-    
+
     setSubmitting(true);
     try {
       const normalizedContact = normalizePhoneNumber(sourceData.contact.trim());
@@ -435,8 +435,8 @@ export default function PublicAttendance() {
       </div>
       <h1 className="text-4xl font-serif font-black text-stone-800 mb-3 tracking-tight">{isArchived ? "Session Concluded" : "Attendance Closed"}</h1>
       <p className="text-stone-400 max-w-sm italic leading-relaxed text-sm">
-        {isArchived 
-          ? "This event has already been recorded and secured in the temple archives." 
+        {isArchived
+          ? "This event has already been recorded and secured in the temple archives."
           : "The attendance window for this session has been closed by the temple authorities."}
       </p>
     </div>
@@ -454,17 +454,17 @@ export default function PublicAttendance() {
 
         {/* Beautiful Entry Pass */}
         <div className="relative group perspective-1000">
-          <div 
+          <div
             ref={passRef}
             className="bg-white border-[12px] border-orange-100 rounded-[2.5rem] p-8 shadow-[0_32px_64px_-16px_rgba(249,115,22,0.15)] relative overflow-hidden text-left"
           >
             {/* Indian Art Background Pattern (Simplified) */}
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none select-none overflow-hidden">
-               <div className="absolute -top-24 -right-24 w-96 h-96 border-[40px] border-orange-500 rounded-full" />
-               <div className="absolute -bottom-24 -left-24 w-96 h-96 border-[40px] border-orange-500 rounded-full" />
-               <div className="absolute inset-0 flex items-center justify-center">
-                 <div className="w-full h-full rotate-45 border-[1px] border-orange-900 border-dashed scale-150" />
-               </div>
+              <div className="absolute -top-24 -right-24 w-96 h-96 border-[40px] border-orange-500 rounded-full" />
+              <div className="absolute -bottom-24 -left-24 w-96 h-96 border-[40px] border-orange-500 rounded-full" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-full h-full rotate-45 border-[1px] border-orange-900 border-dashed scale-150" />
+              </div>
             </div>
 
             <div className="relative z-10 space-y-6">
@@ -483,9 +483,9 @@ export default function PublicAttendance() {
                     year: 'numeric'
                   })}
                   <span className="block text-orange-500 font-serif italic text-xl mt-0.5">
-                    {passData?.generationTime?.toLocaleTimeString(undefined, { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
+                    {passData?.generationTime?.toLocaleTimeString(undefined, {
+                      hour: '2-digit',
+                      minute: '2-digit'
                     })}
                   </span>
                 </div>
@@ -515,7 +515,7 @@ export default function PublicAttendance() {
                   <p className="text-[10px] font-mono text-stone-300">#{id?.slice(-8).toUpperCase()}</p>
                 </div>
                 <div className="w-12 h-12 bg-stone-50 rounded-xl border border-stone-100 flex items-center justify-center opacity-50">
-                   <Clock size={20} className="text-stone-300" />
+                  <Clock size={20} className="text-stone-300" />
                 </div>
               </div>
             </div>
@@ -523,14 +523,14 @@ export default function PublicAttendance() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <button 
+          <button
             onClick={downloadPass}
             className="w-full flex items-center justify-center gap-3 py-5 bg-orange-500 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] shadow-xl shadow-orange-100 hover:scale-[1.02] transition-all active:scale-95"
           >
             <Download size={16} /> Download Entry Pass
           </button>
-          
-          <button 
+
+          <button
             onClick={() => {
               setSubmitted(false);
               setForm(prev => ({
@@ -565,93 +565,93 @@ export default function PublicAttendance() {
 
         <div className="bg-white border border-stone-100 rounded-[3rem] p-10 shadow-2xl shadow-stone-200/50 relative overflow-hidden">
           {isQuickEntryEligible ? (
-             <div className="space-y-6 relative z-10">
-               <div className="flex items-center justify-between mb-2">
-                 <h2 className="text-xl font-black text-stone-800">Saved Devotees</h2>
-                 <button 
-                   onClick={() => {
-                     localStorage.removeItem(SAVED_PROFILES_KEY);
-                     localStorage.removeItem('iskcon_devotee_data');
-                     setSavedProfiles([]);
-                     setSelectedProfileIndex(null);
-                     setForm({
-                       name: '', contact: '', facilitatorId: '', age: '', dob: '',
-                       address: '', gender: '', institute: '', mentor: '', chanting: '0'
-                     });
-                     setHasLocalStorageData(false);
-                   }}
-                   className="text-[10px] uppercase font-black tracking-widest text-red-400 hover:text-red-500 transition-colors"
-                 >
-                   Clear All
-                 </button>
-               </div>
+            <div className="space-y-6 relative z-10">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xl font-black text-stone-800">Saved Devotees</h2>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem(SAVED_PROFILES_KEY);
+                    localStorage.removeItem('iskcon_devotee_data');
+                    setSavedProfiles([]);
+                    setSelectedProfileIndex(null);
+                    setForm({
+                      name: '', contact: '', facilitatorId: '', age: '', dob: '',
+                      address: '', gender: '', institute: '', mentor: '', chanting: '0'
+                    });
+                    setHasLocalStorageData(false);
+                  }}
+                  className="text-[10px] uppercase font-black tracking-widest text-red-400 hover:text-red-500 transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
 
-               <div className="space-y-3">
-                 {savedProfiles.map((profile, idx) => {
-                   const isSelected = selectedProfileIndex === idx;
-                   const isBusy = submitting && isSelected;
-                   return (
-                     <div
-                       key={profile.contact || idx}
-                       className={`relative border ${isBusy ? 'border-orange-100 opacity-70 scale-[0.98]' : 'border-orange-200 hover:shadow-orange-100 hover:shadow-lg'} bg-white rounded-[2rem] p-6 flex items-center justify-between transition-all`}
-                     >
-                       <button
-                         type="button"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           removeSavedProfile(idx);
-                         }}
-                         aria-label={`Remove ${profile.name}`}
-                         className="absolute -top-2 -right-2 w-7 h-7 bg-stone-800 hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-20"
-                       >
-                         <X size={14} />
-                       </button>
-                       <div
-                         onClick={() => {
-                           if (submitting) return;
-                           setSelectedProfileIndex(idx);
-                           setForm(prev => ({ ...prev, ...profile }));
-                           if (isProfileCompleteForTemplate(profile)) {
-                             handleSubmit(undefined, profile);
-                           } else {
-                             // This event's template (possibly changed by the
-                             // owner since this profile was last saved) asks
-                             // for a field this devotee hasn't filled in yet.
-                             // Open the full form, pre-filled with what we
-                             // already have, instead of silently submitting
-                             // incomplete data.
-                             openFullForm();
-                           }
-                         }}
-                         className="flex items-center justify-between flex-1 cursor-pointer"
-                       >
-                         <div>
-                           <h3 className="text-2xl font-black text-stone-800 tracking-tight">{profile.name}</h3>
-                           {profile.mentor && <p className="text-sm font-medium text-stone-500 mt-1">Linked: {profile.mentor}</p>}
-                         </div>
-                         <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center shrink-0">
-                           {isBusy ? (
-                              <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                           ) : (
-                              <ArrowRight size={24} />
-                           )}
-                         </div>
-                       </div>
-                     </div>
-                   );
-                 })}
-               </div>
+              <div className="space-y-3">
+                {savedProfiles.map((profile, idx) => {
+                  const isSelected = selectedProfileIndex === idx;
+                  const isBusy = submitting && isSelected;
+                  return (
+                    <div
+                      key={profile.contact || idx}
+                      className={`relative border ${isBusy ? 'border-orange-100 opacity-70 scale-[0.98]' : 'border-orange-200 hover:shadow-orange-100 hover:shadow-lg'} bg-white rounded-[2rem] p-6 flex items-center justify-between transition-all`}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeSavedProfile(idx);
+                        }}
+                        aria-label={`Remove ${profile.name}`}
+                        className="absolute -top-2 -right-2 w-7 h-7 bg-stone-800 hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-20"
+                      >
+                        <X size={14} />
+                      </button>
+                      <div
+                        onClick={() => {
+                          if (submitting) return;
+                          setSelectedProfileIndex(idx);
+                          setForm(prev => ({ ...prev, ...profile }));
+                          if (isProfileCompleteForTemplate(profile)) {
+                            handleSubmit(undefined, profile);
+                          } else {
+                            // This event's template (possibly changed by the
+                            // owner since this profile was last saved) asks
+                            // for a field this devotee hasn't filled in yet.
+                            // Open the full form, pre-filled with what we
+                            // already have, instead of silently submitting
+                            // incomplete data.
+                            openFullForm();
+                          }
+                        }}
+                        className="flex items-center justify-between flex-1 cursor-pointer"
+                      >
+                        <div>
+                          <h3 className="text-2xl font-black text-stone-800 tracking-tight">{profile.name}</h3>
+                          {profile.mentor && <p className="text-sm font-medium text-stone-500 mt-1">Linked: {profile.mentor}</p>}
+                        </div>
+                        <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center shrink-0">
+                          {isBusy ? (
+                            <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <ArrowRight size={24} />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-               <button 
-                 onClick={openFullForm}
-                 disabled={submitting || savedProfiles.length >= MAX_SAVED_PROFILES}
-                 className="mt-6 w-full py-5 bg-orange-50 hover:bg-orange-100 text-orange-800 font-black tracking-widest text-[10px] uppercase rounded-[1.5rem] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-               >
-                 {savedProfiles.length >= MAX_SAVED_PROFILES
-                   ? 'Maximum 10 Saved Devotees Reached'
-                   : '+ नया पास बनाएँ (New Entry)'}
-               </button>
-             </div>
+              <button
+                onClick={openFullForm}
+                disabled={submitting || savedProfiles.length >= MAX_SAVED_PROFILES}
+                className="mt-6 w-full py-5 bg-orange-50 hover:bg-orange-100 text-orange-800 font-black tracking-widest text-[10px] uppercase rounded-[1.5rem] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {savedProfiles.length >= MAX_SAVED_PROFILES
+                  ? 'Maximum 10 Saved Devotees Reached'
+                  : '+ नया पास बनाएँ (New Entry)'}
+              </button>
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
               {hasLocalStorageData && savedProfiles.length > 0 && (
@@ -668,235 +668,235 @@ export default function PublicAttendance() {
                 {/* Primary Identifier */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Phone size={14} className="text-orange-500" /> Active Contact
-                  </div>
-                  {form.name && (
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        localStorage.removeItem(SAVED_PROFILES_KEY);
-                        localStorage.removeItem('iskcon_devotee_data');
-                        setSavedProfiles([]);
-                        setSelectedProfileIndex(null);
-                        setForm({
-                          name: '', contact: '', facilitatorId: '', age: '', dob: '',
-                          address: '', gender: '', institute: '', mentor: '', chanting: '0'
-                        });
-                      }}
-                      className="text-[9px] text-orange-500 font-black tracking-widest hover:underline"
-                    >
-                      (NOT {form.name.split(' ')[0]}? SWITCH)
-                    </button>
-                  )}
-                </label>
-                <div className="relative group">
-                  <input 
-                    type="tel" required
-                    inputMode="numeric"
-                    maxLength={10}
-                    placeholder="9876543210"
-                    className={cn(
-                      "w-full px-6 py-5 rounded-[1.5rem] border outline-none transition-all shadow-inner font-bold text-stone-700",
-                      form.name ? "bg-emerald-50/30 border-emerald-100 text-emerald-800" : "bg-stone-50/30 border-stone-100 focus:bg-white focus:border-orange-200"
-                    )}
-                    value={form.contact}
-                    onChange={e => setForm({...form, contact: sanitizeMobileInput(e.target.value)})}
-                  />
-                  {form.name && (
-                    <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                       <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                       <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Profile Identified</span>
+                    <div className="flex items-center gap-3">
+                      <Phone size={14} className="text-orange-500" /> Active Contact
                     </div>
-                  )}
+                    {form.name && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem(SAVED_PROFILES_KEY);
+                          localStorage.removeItem('iskcon_devotee_data');
+                          setSavedProfiles([]);
+                          setSelectedProfileIndex(null);
+                          setForm({
+                            name: '', contact: '', facilitatorId: '', age: '', dob: '',
+                            address: '', gender: '', institute: '', mentor: '', chanting: '0'
+                          });
+                        }}
+                        className="text-[9px] text-orange-500 font-black tracking-widest hover:underline"
+                      >
+                        (NOT {form.name.split(' ')[0]}? SWITCH)
+                      </button>
+                    )}
+                  </label>
+                  <div className="relative group">
+                    <input
+                      type="tel" required
+                      inputMode="numeric"
+                      maxLength={10}
+                      placeholder="9876543210"
+                      className={cn(
+                        "w-full px-6 py-5 rounded-[1.5rem] border outline-none transition-all shadow-inner font-bold text-stone-700",
+                        form.name ? "bg-emerald-50/30 border-emerald-100 text-emerald-800" : "bg-stone-50/30 border-stone-100 focus:bg-white focus:border-orange-200"
+                      )}
+                      value={form.contact}
+                      onChange={e => setForm({ ...form, contact: sanitizeMobileInput(e.target.value) })}
+                    />
+                    {form.name && (
+                      <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                        <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Profile Identified</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                    <User size={14} className="text-orange-500" /> Full Name
+                  </label>
+                  <input
+                    type="text" required
+                    placeholder="e.g. Rahul Arya"
+                    className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
+                    value={form.name}
+                    onChange={e => setForm({ ...form, name: e.target.value })}
+                  />
+                </div>
+
+                {/* Dynamic Fields from Template */}
+                {template?.fields.filter((f: string) => f !== 'name' && f !== 'contact').map((field: string) => {
+                  switch (field) {
+                    case 'age':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <Calendar size={14} className="text-orange-500" /> Current Age
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 25"
+                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
+                            value={form.age || ''}
+                            onChange={e => setForm({ ...form, age: e.target.value })}
+                          />
+                        </div>
+                      );
+                    case 'dob':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <Calendar size={14} className="text-orange-500" /> Date of Birth
+                          </label>
+                          <input
+                            type="date"
+                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
+                            value={form.dob || ''}
+                            onChange={e => setForm({ ...form, dob: e.target.value })}
+                          />
+                        </div>
+                      );
+                    case 'address':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <CheckCircle2 size={14} className="text-orange-500" /> Full Address
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder="Complete Postal Address"
+                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 resize-none"
+                            value={form.address || ''}
+                            onChange={e => setForm({ ...form, address: e.target.value })}
+                          />
+                        </div>
+                      );
+                    case 'institute':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <CheckCircle2 size={14} className="text-orange-500" /> Institute / Company
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. DTU, Google, etc."
+                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
+                            value={form.institute || ''}
+                            onChange={e => setForm({ ...form, institute: e.target.value })}
+                          />
+                        </div>
+                      );
+                    case 'gender':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <User size={14} className="text-orange-500" /> Gender
+                          </label>
+                          <div className="grid grid-cols-3 gap-3">
+                            {['Male', 'Female', 'Other'].map(g => (
+                              <button
+                                key={g}
+                                type="button"
+                                onClick={() => setForm({ ...form, gender: g })}
+                                className={cn(
+                                  "py-4 rounded-2xl border font-bold text-xs transition-all",
+                                  form.gender === g ? "bg-stone-900 text-white border-stone-900" : "bg-stone-50 border-stone-100 text-stone-400"
+                                )}
+                              >
+                                {g}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    case 'mentor':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <UserCheck size={14} className="text-orange-500" /> Mentor Name
+                          </label>
+                          <div className="relative">
+                            <select
+                              className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 appearance-none"
+                              value={form.mentor || ''}
+                              onChange={e => setForm({ ...form, mentor: e.target.value })}
+                            >
+                              <option value="">Select Mentor</option>
+                              {mentors.map(m => (
+                                <option key={m.uid} value={m.displayName || ''}>{m.displayName}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" size={20} />
+                          </div>
+                        </div>
+                      );
+                    case 'facilitator':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <Users size={14} className="text-orange-500" /> Assigned Facilitator
+                          </label>
+                          <div className="relative">
+                            <select
+                              className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 appearance-none"
+                              value={form.facilitatorId || ''}
+                              onChange={e => setForm({ ...form, facilitatorId: e.target.value })}
+                            >
+                              <option value="">Select Facilitator</option>
+                              {templeUsers.map(u => (
+                                <option key={u.uid} value={u.uid}>{u.displayName}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" size={20} />
+                          </div>
+                        </div>
+                      );
+                    case 'chanting':
+                      return (
+                        <div key={field} className="space-y-3">
+                          <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
+                            <Check size={14} className="text-orange-500" /> Chanting (Rounds)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            {[0, 1, 4, 8, 12, 16].map(num => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setForm({ ...form, chanting: num.toString() })}
+                                className={cn(
+                                  "flex-1 py-4 rounded-xl border font-bold text-xs transition-all",
+                                  form.chanting === num.toString() ? "bg-orange-500 text-white border-orange-500 shadow-lg" : "bg-stone-50 border-stone-100 text-stone-400"
+                                )}
+                              >
+                                {num === 16 ? '16+' : num}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
               </div>
 
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                  <User size={14} className="text-orange-500" /> Full Name
-                </label>
-                <input 
-                  type="text" required
-                  placeholder="e.g. Rahul Arya"
-                  className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
-                  value={form.name}
-                  onChange={e => setForm({...form, name: e.target.value})}
-                />
-              </div>
-
-              {/* Dynamic Fields from Template */}
-              {template?.fields.filter((f: string) => f !== 'name' && f !== 'contact').map((field: string) => {
-                switch(field) {
-                  case 'age':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <Calendar size={14} className="text-orange-500" /> Current Age
-                        </label>
-                        <input 
-                          type="number"
-                          placeholder="e.g. 25"
-                          className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
-                          value={form.age || ''}
-                          onChange={e => setForm({...form, age: e.target.value})}
-                        />
-                      </div>
-                    );
-                  case 'dob':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <Calendar size={14} className="text-orange-500" /> Date of Birth
-                        </label>
-                        <input 
-                          type="date"
-                          className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
-                          value={form.dob || ''}
-                          onChange={e => setForm({...form, dob: e.target.value})}
-                        />
-                      </div>
-                    );
-                  case 'address':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <CheckCircle2 size={14} className="text-orange-500" /> Full Address
-                        </label>
-                        <textarea 
-                          rows={2}
-                          placeholder="Complete Postal Address"
-                          className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 resize-none"
-                          value={form.address || ''}
-                          onChange={e => setForm({...form, address: e.target.value})}
-                        />
-                      </div>
-                    );
-                  case 'institute':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <CheckCircle2 size={14} className="text-orange-500" /> Institute / Company
-                        </label>
-                        <input 
-                          type="text"
-                          placeholder="e.g. DTU, Google, etc."
-                          className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700"
-                          value={form.institute || ''}
-                          onChange={e => setForm({...form, institute: e.target.value})}
-                        />
-                      </div>
-                    );
-                  case 'gender':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <User size={14} className="text-orange-500" /> Gender
-                        </label>
-                        <div className="grid grid-cols-3 gap-3">
-                          {['Male', 'Female', 'Other'].map(g => (
-                            <button
-                              key={g}
-                              type="button"
-                              onClick={() => setForm({...form, gender: g})}
-                              className={cn(
-                                "py-4 rounded-2xl border font-bold text-xs transition-all",
-                                form.gender === g ? "bg-stone-900 text-white border-stone-900" : "bg-stone-50 border-stone-100 text-stone-400"
-                              )}
-                            >
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  case 'mentor':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <UserCheck size={14} className="text-orange-500" /> Mentor Name
-                        </label>
-                        <div className="relative">
-                          <select 
-                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 appearance-none"
-                            value={form.mentor || ''}
-                            onChange={e => setForm({...form, mentor: e.target.value})}
-                          >
-                            <option value="">Select Mentor</option>
-                            {mentors.map(m => (
-                              <option key={m.uid} value={m.displayName || ''}>{m.displayName}</option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" size={20} />
-                        </div>
-                      </div>
-                    );
-                  case 'facilitator':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <Users size={14} className="text-orange-500" /> Assigned Facilitator
-                        </label>
-                        <div className="relative">
-                          <select 
-                            className="w-full px-6 py-5 rounded-[1.5rem] border border-stone-100 bg-stone-50/30 focus:bg-white focus:border-orange-200 outline-none transition-all shadow-inner font-bold text-stone-700 appearance-none"
-                            value={form.facilitatorId || ''}
-                            onChange={e => setForm({...form, facilitatorId: e.target.value})}
-                          >
-                            <option value="">Select Facilitator</option>
-                            {templeUsers.map(u => (
-                              <option key={u.uid} value={u.uid}>{u.displayName}</option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" size={20} />
-                        </div>
-                      </div>
-                    );
-                  case 'chanting':
-                    return (
-                      <div key={field} className="space-y-3">
-                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-[0.4em] px-1 flex items-center gap-3">
-                          <Check size={14} className="text-orange-500" /> Chanting (Rounds)
-                        </label>
-                        <div className="flex items-center gap-2">
-                          {[0, 1, 4, 8, 12, 16].map(num => (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => setForm({...form, chanting: num.toString()})}
-                              className={cn(
-                                "flex-1 py-4 rounded-xl border font-bold text-xs transition-all",
-                                form.chanting === num.toString() ? "bg-orange-500 text-white border-orange-500 shadow-lg" : "bg-stone-50 border-stone-100 text-stone-400"
-                              )}
-                            >
-                              {num === 16 ? '16+' : num}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  default:
-                    return null;
-                }
-              })}
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={submitting}
-              className="w-full flex items-center justify-center gap-4 py-6 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.3em] hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-orange-100 disabled:opacity-70 disabled:hover:scale-100"
-            >
-              {submitting ? "Processing..." : "Submit Attendance"}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full flex items-center justify-center gap-4 py-6 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.3em] hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-orange-100 disabled:opacity-70 disabled:hover:scale-100"
+              >
+                {submitting ? "Processing..." : "Submit Attendance"}
+              </button>
+            </form>
           )}
         </div>
 
         <footer className="text-center space-y-8">
           <div className="max-w-xs mx-auto p-6 border border-stone-100 rounded-[2.5rem] bg-white shadow-sm">
-             <p className="italic text-[10px] leading-relaxed text-stone-400 font-medium">
+            <p className="italic text-[10px] leading-relaxed text-stone-400 font-medium">
               Your details are securely recorded in the temple database for future outreach and seva updates.
-             </p>
+            </p>
           </div>
           <div className="space-y-2">
             <p className="text-[10px] font-black text-stone-300 uppercase tracking-[0.4em]">© {new Date().getFullYear()} ISKCON SEVA MANAGEMENT</p>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../services/firebase';
 import { 
   collection, 
@@ -10,7 +10,8 @@ import {
   deleteDoc, 
   writeBatch,
   getDocs,
-  serverTimestamp
+  serverTimestamp,
+  deleteField
 } from 'firebase/firestore';
 import { Event, Devotee, UserProfile } from '../types';
 import Layout from '../components/Layout';
@@ -27,6 +28,75 @@ import {
 import { cn, normalizePhoneNumber } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { SearchInput } from '../components/SearchInput';
+import { removeCachedDevotee } from '../lib/dbCache';
+import { runBulkOperation } from '../lib/bulkOperationEngine';
+
+// Chunking is delegated to the shared bulkOperationEngine chunker
+// (runBulkOperation) which keeps batch size safely below Firestore's 500-op
+// limit and yields to the main thread between chunks. Per-chunk try/catch here
+// guarantees a single failing chunk never aborts the whole bulk operation.
+const CHUNK_SIZE = 400;
+
+async function runChunkedDeletes(
+  ids: string[],
+  collectionName: string,
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ success: string[]; failed: string[] }> {
+  const success: string[] = [];
+  const failed: string[] = [];
+
+  await runBulkOperation<{ id: string }>({
+    items: ids.map((id) => ({ id })),
+    batchSize: CHUNK_SIZE,
+    onProgress: (processed, total) => onProgress?.(processed, total),
+    processChunk: async (chunk) => {
+      const batch = writeBatch(db);
+      for (const { id } of chunk) {
+        batch.delete(doc(db, collectionName, id));
+      }
+      try {
+        await batch.commit();
+        success.push(...chunk.map((c) => c.id));
+      } catch (err) {
+        console.error(`[History] Chunk delete failed for ${collectionName}:`, err);
+        failed.push(...chunk.map((c) => c.id));
+      }
+    },
+  });
+
+  return { success, failed };
+}
+
+async function runChunkedUpdates(
+  ids: string[],
+  collectionName: string,
+  updateData: Record<string, any>,
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ success: string[]; failed: string[] }> {
+  const success: string[] = [];
+  const failed: string[] = [];
+
+  await runBulkOperation<{ id: string }>({
+    items: ids.map((id) => ({ id })),
+    batchSize: CHUNK_SIZE,
+    onProgress: (processed, total) => onProgress?.(processed, total),
+    processChunk: async (chunk) => {
+      const batch = writeBatch(db);
+      for (const { id } of chunk) {
+        batch.update(doc(db, collectionName, id), updateData);
+      }
+      try {
+        await batch.commit();
+        success.push(...chunk.map((c) => c.id));
+      } catch (err) {
+        console.error(`[History] Chunk update failed for ${collectionName}:`, err);
+        failed.push(...chunk.map((c) => c.id));
+      }
+    },
+  });
+
+  return { success, failed };
+}
 
 export default function History() {
   const [activeTab, setActiveTab] = useState<'events' | 'devotees' | 'staff' | 'profileActivity'>('events');
@@ -38,7 +108,28 @@ export default function History() {
   const [expandedPA, setExpandedPA] = useState<Record<string, boolean>>({});
   const { profile } = useAuth();
 
-  const getHighlightClass = (devotee: Devotee) => {
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  const duplicateMaps = React.useMemo(() => {
+    const nameMap = new Map<string, number>();
+    const contactMap = new Map<string, number>();
+    const bothMap = new Map<string, number>();
+
+    deletedDevotees.forEach((d) => {
+      const dName = (d.name || (d as any).Name || '').trim().toLowerCase();
+      const dContact = normalizePhoneNumber(d.contact || (d as any)['Contact No.'] || '');
+      if (dName) nameMap.set(dName, (nameMap.get(dName) || 0) + 1);
+      if (dContact) contactMap.set(dContact, (contactMap.get(dContact) || 0) + 1);
+      if (dName && dContact) {
+        const k = `${dName}__${dContact}`;
+        bothMap.set(k, (bothMap.get(k) || 0) + 1);
+      }
+    });
+
+    return { nameMap, contactMap, bothMap };
+  }, [deletedDevotees]);
+
+  const getHighlightClass = useCallback((devotee: Devotee) => {
     const name = devotee.name || (devotee as any).Name || '';
     const contact = devotee.contact || (devotee as any)['Contact No.'] || '';
     
@@ -47,28 +138,16 @@ export default function History() {
     const c = normalizePhoneNumber(contact);
     const n = name.trim().toLowerCase();
     
-    const nameCount = deletedDevotees.filter(d => {
-      const dName = (d.name || (d as any).Name || '').trim().toLowerCase();
-      return dName === n;
-    }).length;
-    
-    const contactCount = deletedDevotees.filter(d => {
-      const dContact = normalizePhoneNumber(d.contact || (d as any)['Contact No.'] || '');
-      return dContact === c;
-    }).length;
-    
-    const bothCount = deletedDevotees.filter(d => {
-      const dName = (d.name || (d as any).Name || '').trim().toLowerCase();
-      const dContact = normalizePhoneNumber(d.contact || (d as any)['Contact No.'] || '');
-      return dName === n && dContact === c;
-    }).length;
+    const nameCount = duplicateMaps.nameMap.get(n) || 0;
+    const contactCount = duplicateMaps.contactMap.get(c) || 0;
+    const bothCount = duplicateMaps.bothMap.get(`${n}__${c}`) || 0;
 
     if (bothCount > 1) return 'bg-red-50 border-red-200';
     if (contactCount > 1) return 'bg-emerald-50 border-emerald-200';
     if (nameCount > 1) return 'bg-sky-50 border-sky-200';
     
     return 'bg-white border-stone-100';
-  };
+  }, [duplicateMaps]);
   
   // Dialog state
   const [dialog, setDialog] = useState<{
@@ -98,6 +177,21 @@ export default function History() {
     });
   };
 
+  // Neutral informational alert (used for partial-failure notices after
+  // chunked bulk operations). Unlike openConfirm, it renders an OK affordance
+  // instead of a destructive "Delete Forever" button.
+  const [alert, setAlert] = useState<{ isOpen: boolean; title: string; message: string }>({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
+
+  const openAlert = (title: string, message: string) => {
+    setAlert({ isOpen: true, title, message });
+  };
+
+  const closeAlert = () => setAlert(prev => ({ ...prev, isOpen: false }));
+
   const togglePA = (id: string) => {
     setExpandedPA(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -113,6 +207,8 @@ export default function History() {
         .map(doc => ({ id: doc.id, ...doc.data() } as Event))
         .filter(e => e.isDeleted && !(e as any).isArchived)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error('[History] events listener error:', error);
     });
 
     // Fetch deleted devotees
@@ -122,6 +218,8 @@ export default function History() {
         .map(doc => ({ id: doc.id, ...doc.data() } as Devotee))
         .filter(d => d.isDeleted)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error('[History] devotees listener error:', error);
     });
 
     // CORRECTED CODE
@@ -132,6 +230,8 @@ export default function History() {
         .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
         .filter(u => u.isDeleted)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error('[History] users listener error:', error);
     });
 
     // CORRECTED CODE
@@ -142,6 +242,8 @@ export default function History() {
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter((pa: any) => pa.isDeleted)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error('[History] callingHistory listener error:', error);
     });
 
     return () => {
@@ -160,66 +262,80 @@ export default function History() {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
-      const batch = writeBatch(db);
-      let count = 0;
+      let totalCount = 0;
 
       // Check events
       const eventsSnap = await getDocs(query(collection(db, 'events'), where('templeId', '==', profile.templeId)));
+      const eventIdsToArchive: string[] = [];
       eventsSnap.forEach(snap => {
         const data = snap.data();
         if (data.isDeleted && data.deletedAt && !data.isArchived) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
-            batch.update(snap.ref, { isArchived: true });
-            count++;
+            eventIdsToArchive.push(snap.id);
           }
         }
       });
+      if (eventIdsToArchive.length > 0) {
+        const result = await runChunkedUpdates(eventIdsToArchive, 'events', { isArchived: true });
+        totalCount += result.success.length;
+      }
 
       // Check devotees
       const devoteesSnap = await getDocs(query(collection(db, 'devotees'), where('templeId', '==', profile.templeId)));
+      const devoteeIdsToDelete: string[] = [];
       devoteesSnap.forEach(snap => {
         const data = snap.data();
         if (data.isDeleted && data.deletedAt) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
-            batch.delete(snap.ref);
-            count++;
+            devoteeIdsToDelete.push(snap.id);
           }
         }
       });
+      if (devoteeIdsToDelete.length > 0) {
+        const result = await runChunkedDeletes(devoteeIdsToDelete, 'devotees');
+        totalCount += result.success.length;
+      }
 
       // CORRECTED CODE
       // Check users/staff
       const usersSnap = await getDocs(query(collection(db, 'users'), where('templeId', '==', profile.templeId)));
+      const userIdsToDelete: string[] = [];
       usersSnap.forEach(snap => {
         const data = snap.data();
         if (data.isDeleted && data.deletedAt) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
-            batch.delete(snap.ref);
-            count++;
+            userIdsToDelete.push(snap.id);
           }
         }
       });
+      if (userIdsToDelete.length > 0) {
+        const result = await runChunkedDeletes(userIdsToDelete, 'users');
+        totalCount += result.success.length;
+      }
 
       // CORRECTED CODE
       // Check callingHistory / profile activities
       const historySnap = await getDocs(query(collection(db, 'callingHistory'), where('templeId', '==', profile.templeId)));
+      const paIdsToDelete: string[] = [];
       historySnap.forEach(snap => {
         const data = snap.data();
         if (data.isDeleted && data.deletedAt) {
           const deletedDate = data.deletedAt.toDate ? data.deletedAt.toDate() : new Date(data.deletedAt);
           if (deletedDate < thirtyDaysAgo) {
-            batch.delete(snap.ref);
-            count++;
+            paIdsToDelete.push(snap.id);
           }
         }
       });
+      if (paIdsToDelete.length > 0) {
+        const result = await runChunkedDeletes(paIdsToDelete, 'callingHistory');
+        totalCount += result.success.length;
+      }
 
-      if (count > 0) {
-        await batch.commit();
-        console.log(`Auto-cleanup permanently deleted ${count} records older than 30 days.`);
+      if (totalCount > 0) {
+        console.log(`Auto-cleanup permanently deleted ${totalCount} records older than 30 days.`);
       }
     };
 
@@ -269,26 +385,29 @@ export default function History() {
       activeTab === 'staff' ? 'Personals' : 
       'Profile Activities';
 
+    const collectionName = 
+      activeTab === 'events' ? 'events' : 
+      activeTab === 'devotees' ? 'devotees' : 
+      activeTab === 'staff' ? 'users' : 
+      'callingHistory';
+
+    const ids = currentList.map(item => (item as any).id || (item as any).uid);
+
     openConfirm(
       "Clear All History", 
       `Are you sure you want to permanently delete all ${currentList.length} ${typeLabel}? This cannot be undone.`, 
       async () => {
-        const batch = writeBatch(db);
-        for (const item of currentList) {
-          const id = (item as any).id || (item as any).uid;
-          const collectionName = 
-            activeTab === 'events' ? 'events' : 
-            activeTab === 'devotees' ? 'devotees' : 
-            activeTab === 'staff' ? 'users' : 
-            'callingHistory';
-          
-          if (collectionName === 'events') {
-            batch.update(doc(db, 'events', id), { isArchived: true });
-          } else {
-            batch.delete(doc(db, collectionName, id));
+        if (collectionName === 'events') {
+          const result = await runChunkedUpdates(ids, 'events', { isArchived: true });
+          if (result.failed.length > 0) {
+            openAlert('Partial Failure', `${result.failed.length} of ${ids.length} events could not be archived. They remain in history.`);
+          }
+        } else {
+          const result = await runChunkedDeletes(ids, collectionName);
+          if (result.failed.length > 0) {
+            openAlert('Partial Failure', `${result.failed.length} of ${ids.length} ${typeLabel.toLowerCase()} could not be deleted. They remain in history.`);
           }
         }
-        await batch.commit();
       }
     );
   };
@@ -300,8 +419,13 @@ export default function History() {
       async () => {
         if (type === 'event') {
           await updateDoc(doc(db, 'events', id), { isArchived: true });
+        } else if (type === 'devotee') {
+          await deleteDoc(doc(db, 'devotees', id));
+          // Keep the local cache consistent: never let an old IndexedDB row
+          // resurrect a permanently-deleted record after a refresh.
+          removeCachedDevotee(id).catch(() => {});
         } else {
-          await deleteDoc(doc(db, type === 'devotee' ? 'devotees' : 'users', id));
+          await deleteDoc(doc(db, 'users', id));
         }
       }
     );
@@ -325,16 +449,39 @@ export default function History() {
       "Wipe All Archives",
       `Are you sure you want to permanently delete ALL ${total} records across ALL categories? This action is absolutely irreversible.`,
       async () => {
-        const batch = writeBatch(db);
+        let totalFailed = 0;
         
-        for (const e of deletedEvents) {
-          batch.update(doc(db, 'events', e.id!), { isArchived: true });
+        // Events - update isArchived
+        if (deletedEvents.length > 0) {
+          const eventIds = deletedEvents.map(e => e.id!);
+          const result = await runChunkedUpdates(eventIds, 'events', { isArchived: true });
+          totalFailed += result.failed.length;
         }
-        deletedDevotees.forEach(d => batch.delete(doc(db, 'devotees', d.id!)));
-        deletedStaff.forEach(s => batch.delete(doc(db, 'users', s.uid)));
-        deletedProfileActivities.forEach(pa => batch.delete(doc(db, 'callingHistory', pa.id)));
-
-        await batch.commit();
+        
+        // Devotees - hard delete
+        if (deletedDevotees.length > 0) {
+          const devoteeIds = deletedDevotees.map(d => d.id!);
+          const result = await runChunkedDeletes(devoteeIds, 'devotees');
+          totalFailed += result.failed.length;
+        }
+        
+        // Staff - hard delete
+        if (deletedStaff.length > 0) {
+          const staffIds = deletedStaff.map(s => s.uid);
+          const result = await runChunkedDeletes(staffIds, 'users');
+          totalFailed += result.failed.length;
+        }
+        
+        // Profile Activities - hard delete
+        if (deletedProfileActivities.length > 0) {
+          const paIds = deletedProfileActivities.map(pa => pa.id);
+          const result = await runChunkedDeletes(paIds, 'callingHistory');
+          totalFailed += result.failed.length;
+        }
+        
+        if (totalFailed > 0) {
+          openAlert('Partial Failure', `${totalFailed} of ${total} records could not be permanently deleted. They remain in history.`);
+        }
       }
     );
   };
@@ -361,6 +508,31 @@ export default function History() {
       (ass.devoteeContact || '').includes(searchTerm)
     )
   );
+
+  // Reset visibleCount when switching tabs or typing search queries
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [activeTab, searchTerm]);
+
+  // Window scroll listener for incremental chunk loading
+  useEffect(() => {
+    const handleScroll = () => {
+      const totalLen =
+        activeTab === 'events' ? filteredEvents.length :
+        activeTab === 'devotees' ? filteredDevotees.length :
+        activeTab === 'staff' ? filteredStaff.length :
+        filteredProfileActivities.length;
+
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 600) {
+        if (visibleCount < totalLen) {
+          setVisibleCount((prev) => Math.min(prev + 40, totalLen));
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [visibleCount, activeTab, filteredEvents.length, filteredDevotees.length, filteredStaff.length, filteredProfileActivities.length]);
 
   const getDaysLeft = (deletedAt?: any) => {
     if (!deletedAt) return 30;
@@ -463,7 +635,7 @@ export default function History() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           <AnimatePresence mode="popLayout">
             {activeTab === 'events' ? (
-              filteredEvents.map(event => (
+              filteredEvents.slice(0, visibleCount).map(event => (
                 <motion.div 
                   key={event.id}
                   layout
@@ -532,7 +704,7 @@ export default function History() {
                 </motion.div>
               ))
             ) : activeTab === 'devotees' ? (
-              filteredDevotees.map(devotee => (
+              filteredDevotees.slice(0, visibleCount).map(devotee => (
                 <motion.div 
                   key={devotee.id}
                   layout
@@ -585,7 +757,7 @@ export default function History() {
                 </motion.div>
               ))
             ) : activeTab === 'staff' ? (
-              filteredStaff.map(staff => (
+              filteredStaff.slice(0, visibleCount).map(staff => (
                 <motion.div 
                   key={staff.uid}
                   layout
@@ -632,7 +804,7 @@ export default function History() {
                 </motion.div>
               ))
             ) : (
-              filteredProfileActivities.map(pa => (
+              filteredProfileActivities.slice(0, visibleCount).map(pa => (
                 <motion.div 
                   key={pa.id}
                   layout
@@ -725,6 +897,19 @@ export default function History() {
             )}
           </AnimatePresence>
 
+          {/* YouTube-style Loading Spinner Ring when scrolling for more items */}
+          {visibleCount < (
+            activeTab === 'events' ? filteredEvents.length : 
+            activeTab === 'devotees' ? filteredDevotees.length : 
+            activeTab === 'staff' ? filteredStaff.length : 
+            filteredProfileActivities.length
+          ) && (
+            <div className="col-span-full py-10 flex flex-col items-center justify-center gap-3">
+              <div className="w-9 h-9 border-4 border-orange-500 border-t-transparent rounded-full animate-spin shadow-md" />
+              <span className="text-xs font-black uppercase tracking-widest text-stone-400">Loading more records...</span>
+            </div>
+          )}
+
           {(
             activeTab === 'events' ? filteredEvents.length : 
             activeTab === 'devotees' ? filteredDevotees.length : 
@@ -770,6 +955,27 @@ export default function History() {
                 Delete Forever
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+    {alert.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm border border-stone-100 text-center"
+          >
+            <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={36} />
+            </div>
+            <h3 className="text-2xl font-bold font-serif text-stone-800 mb-2">{alert.title}</h3>
+            <p className="text-stone-500 mb-8 leading-relaxed italic">{alert.message}</p>
+            <button 
+              onClick={closeAlert}
+              className="w-full px-6 py-4 bg-stone-900 hover:bg-stone-700 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg transition-all hover:scale-[1.02] text-[10px]"
+            >
+              OK
+            </button>
           </motion.div>
         </div>
       )}

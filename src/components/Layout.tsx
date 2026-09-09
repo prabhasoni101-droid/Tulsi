@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import DuplicateConflictBell from './DuplicateConflictBell';
+import BulkOperationBell from './BulkOperationBell';
 
 const getDriveImageUrl = (url: string) => {
   if (!url) return '';
@@ -166,7 +167,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         {/* Top Header */}
         <div className="w-full max-w-7xl mx-auto px-6 pt-6 md:px-12 md:pt-12 flex justify-end items-center gap-4">
           {isOwner && profile?.templeId && (
-            <DuplicateConflictBell templeId={profile.templeId} />
+            <>
+              <DuplicateConflictBell templeId={profile.templeId} />
+              <BulkOperationBell templeId={profile.templeId} />
+            </>
           )}
           <strong className="max-w-[200px] md:max-w-none text-right md:text-left text-stone-900 italic font-serif font-black text-[12px] md:text-[14px] tracking-wide bg-transparent">
             Founder Acarya: His Divine Grace A.C. Bhaktivedanta Swami Prabhupada

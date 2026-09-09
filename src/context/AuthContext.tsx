@@ -203,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         },
         (error) => {
-          console.error('Profile stream error:', error);
+          if (error?.code !== 'permission-denied') console.error('Profile stream error:', error);
           setProfile(null);
           setProfileError('Could not load your profile. Please try again.');
           setLoading(false);

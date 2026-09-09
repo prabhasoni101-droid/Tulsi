@@ -78,7 +78,7 @@ export default function DevoteeProfile() {
 
     const fetchAll = async () => {
       setLoading(true);
-      try {
+try {
         unsubDevotee = onSnapshot(doc(db, 'devotees', id), async (devDoc) => {
           if (devDoc.exists()) {
              const data = { id: devDoc.id, ...devDoc.data() } as Devotee;
@@ -97,8 +97,10 @@ export default function DevoteeProfile() {
                   .filter(u => !u.isDeleted)
               );
              }
-          }
-        });
+           }
+         }, (error) => {
+           if (error?.code !== 'permission-denied') console.error("[DevoteeProfile] devotee listener error:", error);
+         });
 
         const qA = query(collectionGroup(db, 'assignments'), where('devoteeId', '==', id));
         unsubAssignments = onSnapshot(qA, async (assignSnap) => {
@@ -119,6 +121,8 @@ export default function DevoteeProfile() {
            }
            setEvents(prev => ({...prev, ...eventMap}));
            setAttendanceRecords(prev => ({...prev, ...attRecords}));
+        }, (error) => {
+          if (error?.code !== 'permission-denied') console.error("[DevoteeProfile] assignments listener error:", error);
         });
       } catch (error) {
         console.error("Error fetching devotee profile:", error);

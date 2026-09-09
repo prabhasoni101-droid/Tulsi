@@ -121,9 +121,17 @@ export function listenToConflicts(
     where('templeId', '==', templeId),
     where('status', '==', 'pending')
   );
-  return onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ConflictAssignment)));
-  });
+  return onSnapshot(
+    q,
+    (snap: QuerySnapshot<DocumentData>) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ConflictAssignment)));
+    },
+    (error) => {
+      if (error?.code !== 'permission-denied') {
+        console.error('[DuplicateConflicts] listener error:', error);
+      }
+    }
+  );
 }
 
 // Owner explicitly taps "Assign" for one facilitator: that facilitator keeps

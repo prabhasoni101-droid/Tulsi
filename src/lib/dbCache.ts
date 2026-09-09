@@ -2,9 +2,14 @@ import { Devotee } from '../types';
 import { normalizeDevoteeList } from './dataNormalizer';
 
 const DB_NAME = 'ISKCON_Devotee_LocalDB';
-const DB_VERSION = 1;
+// v2: additively adds the PENDING_STORE for the local-first workspace
+// pending-operation queue. Existing DEVOTEE_STORE/META_STORE are untouched, so
+// all previously cached data remains readable (additive migration, PDR J).
+const DB_VERSION = 2;
 const DEVOTEE_STORE = 'devotees';
 const META_STORE = 'metadata';
+/** Pending local operations not yet acknowledged by the sync coordinator. */
+const PENDING_STORE = 'pendingOps';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -28,6 +33,9 @@ function getDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(PENDING_STORE)) {
+        db.createObjectStore(PENDING_STORE, { keyPath: 'id' });
       }
     };
 
@@ -203,3 +211,6 @@ export async function removeCachedDevoteesBatch(ids: string[]): Promise<void> {
     console.error('[IndexedDB] Batch delete from cache failed:', err);
   }
 }
+
+export { getDB };
+export { DEVOTEE_STORE, PENDING_STORE, DB_NAME, DB_VERSION };

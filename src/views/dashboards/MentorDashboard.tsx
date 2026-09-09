@@ -61,6 +61,8 @@ const MentorDashboard = () => {
         .map(doc => ({ id: doc.id, ...doc.data() } as Devotee))
         .filter(d => d.templeId === profile.templeId && !d.isDeleted)
       );
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[MentorDashboard] devotees listener error:", error);
     });
 
     const unsubscribeE = subscribeToVisibleEvents(profile.templeId, (visibleEvents) => {
@@ -75,34 +77,29 @@ const MentorDashboard = () => {
     const unsubscribeU = onSnapshot(collection(db, 'users'), async (snapshot) => {
       const usersData = snapshot.docs
         .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
-         .filter(u => u.templeId === profile.templeId && !u.isDeleted && u.role !== 'OWNER');
-      
+        .filter(u => u.templeId === profile.templeId && !u.isDeleted && u.role !== 'OWNER');
       const updatedUsers = await Promise.all(usersData.map(async (u) => {
         const qA = query(collectionGroup(db, 'assignments'), where('userId', '==', u.uid));
         const assSnap = await getDocs(qA);
-        
         const validAssignments = assSnap.docs
           .map(d => ({...d.data(), eventRef: d.ref.parent.parent?.id} as any))
           .filter(d => d.eventRef && activeEventsMap[d.eventRef as string]);
-          
         const total = validAssignments.length;
         const completed = validAssignments.filter(d => d.status === 'COMPLETED').length;
         const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
-        
         let attendeesCount = 0;
         for (const ass of validAssignments) {
           if (!ass.eventRef || !ass.devoteeId) continue;
           try {
             const attDoc = await (await import('firebase/firestore')).getDoc(doc(db, `events/${ass.eventRef}/attendance`, ass.devoteeId as string));
-            if (attDoc.exists()) {
-              attendeesCount++;
-            }
+            if (attDoc.exists()) attendeesCount++;
           } catch (e) {}
         }
-
         return { ...u, completionRate: rate, attendeesCount };
       }));
       setAppUsers(updatedUsers);
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.error("[MentorDashboard] users listener error:", error);
     });
 
     return () => {
@@ -126,7 +123,7 @@ const MentorDashboard = () => {
       setUserAssignments(validAssignments);
       setLoadingAssignments(false);
     }, (error) => {
-      console.error(error);
+      if (error?.code !== 'permission-denied') console.error("[MentorDashboard] assignments listener error:", error);
       setLoadingAssignments(false);
     });
 

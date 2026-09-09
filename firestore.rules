@@ -245,6 +245,13 @@ service cloud.firestore {
       match /history/{historyId} {
         allow read, write: if (isOwner() || isMentor()) && userTempleId() == templeId;
       }
+
+      // Durable bulk-operation failure alerts shown to the owner's bell.
+      // Owned by the owner (bulk ops), readable in real time by the owner.
+      match /bulkAlerts/{alertId} {
+        allow read: if isActiveUser() && userTempleId() == templeId;
+        allow write: if isOwner() && userTempleId() == templeId;
+      }
     }
 
     // ── Collection group: assignments (profile view) ───────────────────────────

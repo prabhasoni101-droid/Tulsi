@@ -90,14 +90,16 @@ const UserDashboard = () => {
     let unsubscribeE = () => {};
     let unsubscribeA = () => {};
   
-    if (profile.role === 'OWNER' || profile.role === 'MENTOR') {
+if (profile.role === 'OWNER' || profile.role === 'MENTOR') {
        unsubscribeE = onSnapshot(query(collection(db, 'events'), where('templeId', '==', profile.templeId)), (snapshot) => {
-        const allEvents = snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as Event))
-          .filter(e => e.templeId === profile.templeId && !e.isDeleted);
-        setEvents(allEvents);
-      });
-    } else {
+         const allEvents = snapshot.docs
+           .map(doc => ({ id: doc.id, ...doc.data() } as Event))
+           .filter(e => e.templeId === profile.templeId && !e.isDeleted);
+         setEvents(allEvents);
+       }, (error) => {
+         if (error?.code !== 'permission-denied') console.error("[UserDashboard] events listener error:", error);
+       });
+     } else {
       let publicEvents: Event[] = [];
       let assignedEvents: Event[] = [];
       let isMounted = true;
@@ -173,7 +175,7 @@ const UserDashboard = () => {
         );
         publishEvents();
       }, (err) => {
-        console.error("Error fetching user assignments in dashboard:", err);
+        if (err?.code !== 'permission-denied') console.error("[UserDashboard] assignments listener error:", err);
       });
 
       const originalUnsubE = unsubscribeE;
@@ -194,6 +196,8 @@ const UserDashboard = () => {
       const qD = query(collection(db, 'devotees'), where('facilitatorId', '==', profile.uid));
       unsubscribeD = onSnapshot(qD, (snapshot) => {
         setRecentAdditions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Devotee)));
+      }, (error) => {
+        if (error?.code !== 'permission-denied') console.error("[UserDashboard] devotees listener error:", error);
       });
 
       const qH = query(collection(db, 'callingHistory'), where('userId', '==', profile.uid));
@@ -203,6 +207,8 @@ const UserDashboard = () => {
           .filter((h: any) => !h.isDeleted);
         history.sort((a: any, b: any) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
         setCallingHistory(history);
+      }, (error) => {
+        if (error?.code !== 'permission-denied') console.error("[UserDashboard] callingHistory listener error:", error);
       });
     }
 
