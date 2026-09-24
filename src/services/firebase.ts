@@ -156,11 +156,33 @@ export async function loginOwnerWithTestCredentials(): Promise<User> {
   return signInWithEmailAndPassword(auth, email, password).then((r) => r.user);
 }
 
-export function generateSecurePassword(length = 14): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
-  const values = new Uint32Array(length);
-  crypto.getRandomValues(values);
-  return Array.from(values, (v) => chars[v % chars.length]).join('');
+/**
+ * Generates a MEMORABLE, easy-to-type password that fits the app's 8-character
+ * sign-in limit while staying hard to guess.
+ *
+ * Format: [EasyWord][2 digits][symbol]  ->  exactly `length` (default 8) chars.
+ * e.g. "Tulsi27!" — a recognizable word plus digits and one symbol makes it far
+ * stronger than a plain dictionary word, yet short enough to type reliably and
+ * remember. Always stays at or above Firebase's 6-character minimum.
+ */
+export function generateSecurePassword(length = 8): string {
+  const words = [
+    'tulsi', 'radhe', 'seva', 'hare', 'krish', 'govin', 'nitai',
+    'mohan', 'rama', 'bhakt', 'prema', 'subha', 'maya', 'dhyan',
+  ];
+  // Keep a short word core and pad digits + symbol so the total is exactly `length`.
+  const letters = Math.max(3, Math.min(length - 3, 6));
+  const symbolPool = '!@#$%&*?=+-';
+  const word = words[Math.floor(Math.random() * words.length)].slice(0, letters);
+  const cased = word.charAt(0).toUpperCase() + word.slice(1);
+  const digits = String(Math.floor(10 + Math.random() * 90)); // 2 digits
+  const symbol = symbolPool[Math.floor(Math.random() * symbolPool.length)];
+  const tailChars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const remaining = Math.max(0, length - cased.length - digits.length - symbol.length);
+  const tail = Array.from({ length: remaining }, () =>
+    tailChars[Math.floor(Math.random() * tailChars.length)]
+  ).join('');
+  return `${cased}${digits}${symbol}${tail}`.slice(0, length);
 }
 
 export async function registerSevak(userId: string, password: string) {

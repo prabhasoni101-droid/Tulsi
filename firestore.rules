@@ -143,10 +143,21 @@ service cloud.firestore {
       allow create: if isSignedIn() && isMentor()
         && isValidDevotee(incoming())
         && incoming().templeId == userTempleId();
+      // Partial updates are allowed in the UI (soft-delete sets isDeleted only,
+      // facilitator/attendance writes update a single field, etc.). Firestore
+      // preserves untouched fields server-side, so name/contact are never lost.
+      // We still enforce tenant isolation (same temple + cannot re-target
+      // templeId), block password/role writes, and validate name/contact
+      // whenever they are actually being updated.
       allow update: if isSignedIn() && isMentor()
         && sameTemple(resource.data.templeId)
-        && incoming().templeId == resource.data.templeId
-        && isValidDevotee(incoming());
+        && (!incoming().keys().hasAny(['templeId'])
+            || incoming().templeId == resource.data.templeId)
+        && !incoming().keys().hasAny(['password', 'role'])
+        && (!incoming().keys().hasAny(['name'])
+            || (incoming().name is string && incoming().name.size() <= 100))
+        && (!incoming().keys().hasAny(['contact'])
+            || (incoming().contact is string && incoming().contact.size() <= 20));
       allow delete: if isOwner() && sameTemple(resource.data.templeId);
 
       // Public attendance: create/update when event attendance is open for same temple

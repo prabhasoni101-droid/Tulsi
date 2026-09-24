@@ -250,8 +250,9 @@ const Login = () => {
                         required
                         placeholder="e.g. sevak123"
                         className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:bg-white focus:border-primary focus:ring-4 ring-primary/5 outline-none transition-all text-sm font-medium"
+                        maxLength={10}
                         value={userId}
-                        onChange={e => setUserId(e.target.value)}
+                        onChange={e => setUserId(e.target.value.slice(0, 10))}
                       />
                     </div>
                   </div>
@@ -264,8 +265,9 @@ const Login = () => {
                         required
                         placeholder="Password"
                         className="w-full pl-11 pr-11 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:bg-white focus:border-primary focus:ring-4 ring-primary/5 outline-none transition-all text-sm font-medium"
+                        maxLength={8}
                         value={password}
-                        onChange={e => setPassword(e.target.value)}
+                        onChange={e => setPassword(e.target.value.slice(0, 8))}
                       />
                       <button
                         type="button"

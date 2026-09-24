@@ -8,6 +8,7 @@ import {
   doc, 
   updateDoc, 
   deleteDoc, 
+  setDoc,
   writeBatch,
   getDocs,
   serverTimestamp,
@@ -29,7 +30,9 @@ import { cn, normalizePhoneNumber } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { SearchInput } from '../components/SearchInput';
 import { removeCachedDevotee } from '../lib/dbCache';
+import { workspaceStore } from '../lib/workspace/workspaceStore';
 import { runBulkOperation } from '../lib/bulkOperationEngine';
+import { commitBatchedDeletes } from '../lib/firestoreBatch';
 
 // Chunking is delegated to the shared bulkOperationEngine chunker
 // (runBulkOperation) which keeps batch size safely below Firestore's 500-op
@@ -42,29 +45,12 @@ async function runChunkedDeletes(
   collectionName: string,
   onProgress?: (processed: number, total: number) => void
 ): Promise<{ success: string[]; failed: string[] }> {
-  const success: string[] = [];
-  const failed: string[] = [];
-
-  await runBulkOperation<{ id: string }>({
-    items: ids.map((id) => ({ id })),
-    batchSize: CHUNK_SIZE,
-    onProgress: (processed, total) => onProgress?.(processed, total),
-    processChunk: async (chunk) => {
-      const batch = writeBatch(db);
-      for (const { id } of chunk) {
-        batch.delete(doc(db, collectionName, id));
-      }
-      try {
-        await batch.commit();
-        success.push(...chunk.map((c) => c.id));
-      } catch (err) {
-        console.error(`[History] Chunk delete failed for ${collectionName}:`, err);
-        failed.push(...chunk.map((c) => c.id));
-      }
-    },
-  });
-
-  return { success, failed };
+  if (!ids || ids.length === 0) return { success: [], failed: [] };
+  // Route through the verifiable batch DELETE: per-doc retry on chunk failure +
+  // a final read-back pass so we report the true "deleted vs left" outcome.
+  const refs = ids.map((id) => doc(db, collectionName, id));
+  const outcome = await commitBatchedDeletes(db, refs, onProgress);
+  return { success: outcome.deleted, failed: outcome.failed };
 }
 
 async function runChunkedUpdates(
@@ -296,6 +282,11 @@ export default function History() {
       if (devoteeIdsToDelete.length > 0) {
         const result = await runChunkedDeletes(devoteeIdsToDelete, 'devotees');
         totalCount += result.success.length;
+        // Permanently auto-deleted devotees must leave the local caches too.
+        devoteeIdsToDelete.forEach(id => {
+          workspaceStore.removeRecord(id);
+          removeCachedDevotee(id).catch(() => {});
+        });
       }
 
       // CORRECTED CODE
@@ -350,10 +341,21 @@ export default function History() {
   };
 
   const handleRestoreDevotee = async (id: string) => {
-    await updateDoc(doc(db, 'devotees', id), {
+    // Re-write the FULL stored document with isDeleted cleared. Sending the whole
+    // record (not just `{ isDeleted: false }`) ensures the incoming data still
+    // satisfies the Firestore `isValidDevotee` rule (name + contact), so the
+    // restore actually commits regardless of how the rules treat partial writes.
+    const rec = deletedDevotees.find(d => d.id === id) as any;
+    const rest = { ...(rec ?? {}) };
+    delete rest.id;
+    delete rest.searchKey;
+    delete rest.isDeleted;
+    delete rest.deletedAt;
+    await setDoc(doc(db, 'devotees', id), {
+      ...rest,
       isDeleted: false,
-      deletedAt: null
-    });
+      deletedAt: deleteField()
+    }, { merge: true });
   };
 
   const handleRestoreStaff = async (id: string) => {
@@ -404,8 +406,11 @@ export default function History() {
           }
         } else {
           const result = await runChunkedDeletes(ids, collectionName);
+          const deletedCount = ids.length - result.failed.length;
           if (result.failed.length > 0) {
-            openAlert('Partial Failure', `${result.failed.length} of ${ids.length} ${typeLabel.toLowerCase()} could not be deleted. They remain in history.`);
+            openAlert('Partial Deletion', `${deletedCount} ${typeLabel.toLowerCase()} were deleted from the database. ${result.failed.length} could NOT be deleted (connection/permission error) and remain in history so nothing is silently lost.`);
+          } else {
+            openAlert('Deleted', `${deletedCount} ${typeLabel.toLowerCase()} were permanently deleted from the database.`);
           }
         }
       }
@@ -420,10 +425,18 @@ export default function History() {
         if (type === 'event') {
           await updateDoc(doc(db, 'events', id), { isArchived: true });
         } else if (type === 'devotee') {
-          await deleteDoc(doc(db, 'devotees', id));
-          // Keep the local cache consistent: never let an old IndexedDB row
-          // resurrect a permanently-deleted record after a refresh.
-          removeCachedDevotee(id).catch(() => {});
+          try {
+            await deleteDoc(doc(db, 'devotees', id));
+            // Keep every local cache consistent so a permanently-deleted record
+            // can never be resurrected from the workspace store or IndexedDB.
+            workspaceStore.removeRecord(id);
+            removeCachedDevotee(id).catch(() => {});
+            openAlert('Deleted', 'Record permanently deleted from the database.');
+          } catch (err) {
+            console.error('[History] Permanent delete failed:', err);
+            openAlert('Delete Failed', 'The record could NOT be permanently removed. It remains in history so nothing is lost. Please check your connection and try again.');
+            return;
+          }
         } else {
           await deleteDoc(doc(db, 'users', id));
         }
@@ -463,6 +476,12 @@ export default function History() {
           const devoteeIds = deletedDevotees.map(d => d.id!);
           const result = await runChunkedDeletes(devoteeIds, 'devotees');
           totalFailed += result.failed.length;
+          // Freshly deleted devotees must also leave the local caches so they
+          // can never be re-uploaded from the workspace/IndexedDB.
+          devoteeIds.forEach(id => {
+            workspaceStore.removeRecord(id);
+            removeCachedDevotee(id).catch(() => {});
+          });
         }
         
         // Staff - hard delete
@@ -480,7 +499,9 @@ export default function History() {
         }
         
         if (totalFailed > 0) {
-          openAlert('Partial Failure', `${totalFailed} of ${total} records could not be permanently deleted. They remain in history.`);
+          openAlert('Partial Deletion', `${total - totalFailed} of ${total} records were permanently deleted from the database. ${totalFailed} could NOT be deleted (connection/permission error) and remain in history.`);
+        } else if (total > 0) {
+          openAlert('Deleted', `${total} records were permanently deleted from the database.`);
         }
       }
     );

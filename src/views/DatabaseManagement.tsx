@@ -2990,17 +2990,36 @@ const DatabaseManagement: React.FC = () => {
         // Register the pending mutation BEFORE the Firestore write so a stale
         // snapshot or cache row can't resurrect the record mid-operation.
         await addPendingMutations({ deleteIds: [id] });
-        await updateDoc(doc(db, 'devotees', id), { 
+        // Read the current devotee record (workspace row, else the server doc)
+        // and re-write the FULL document with isDeleted=true. Writing the whole
+        // document — instead of only `{ isDeleted: true }` — guarantees the
+        // incoming data still satisfies the Firestore `isValidDevotee` rule
+        // (must contain `name` + `contact`), so the soft delete actually commits
+        // and the record appears in History. `merge` keeps any server-side
+        // fields we don't know about intact.
+        let current: any = workspaceStore.getRecord(id);
+        if (!current) {
+          const snap = await getDoc(doc(db, 'devotees', id));
+          if (snap.exists()) current = snap.data();
+        }
+        const { id: _omitId, searchKey: _omitSearch, ...rest } = (current ?? {}) as any;
+        await setDoc(doc(db, 'devotees', id), {
+          ...rest,
           isDeleted: true,
           deletedAt: serverTimestamp()
-        });
+        }, { merge: true });
         // Remove the cache row too so IndexedDB never resurrects it.
         removeCachedDevoteesBatch([id]).catch(() => {});
         await removePendingMutations({ deleteIds: [id] });
         recordActivity({ type: 'deleteDevotee', id });
+        openAlert('Moved to History', 'Devotee moved to History successfully. It can be restored for 30 days.');
       } catch (error: any) {
         if (error.code !== 'not-found' && !error.message?.includes('No document to update')) {
           console.error(error);
+          // The write was NOT committed — keep the devotee exactly as it was in
+          // its previous place (the realtime listener never removed it) and tell
+          // the owner what happened.
+          openAlert('Delete Failed', 'The devotee could NOT be deleted and remains in the database exactly as before. Please check your connection and try again.');
         } else {
           // Document was already gone or truly not found; clear the guard and
           // remove from cache so we don't leave a stale active row.

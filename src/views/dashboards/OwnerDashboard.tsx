@@ -157,8 +157,11 @@ const OwnerDashboard = () => {
     try {
       const normalizedContact = normalizePhoneNumber(regForm.contact);
       
-      // 1. Generate unique ID (name + 3 random digits)
-      const uniqueId = `${regForm.name.toLowerCase().replace(/\s/g, '')}${Math.floor(100 + Math.random() * 900)}`;
+      // 1. Generate a unique, memorable ID kept within the 10-character sign-in
+      //    limit so it can always be typed reliably. Pattern: name + 3 digits.
+      const baseName = regForm.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const randomDigits = Math.floor(100 + Math.random() * 900);
+      const uniqueId = `${baseName}${randomDigits}`.slice(0, 10);
       const password = generateSecurePassword();
 
       const userCred = await registerSevak(uniqueId, password);
